@@ -1,10 +1,17 @@
 # omarchy-tv
 
-IPTV player for [Omarchy](https://omarchy.org). Country → Category → Channels → Play.
+Native IPTV player for [Omarchy](https://omarchy.org). Beautiful, fast, keyboard-first.
 
-Browse live TV from around the world. Pick your country, pick a category, start watching.
+Browse live TV from around the world — pick your country, pick a category, start watching.
 
-**Channel surfing:** `+`/`-` next/prev channel, `Esc` to go back.
+## Features
+
+- **Country → Category → Channels** — organized, not chaotic
+- **Channel surfing** — `+`/`-` to surf, OSD shows what's playing
+- **Keyboard-first** — every action has a shortcut
+- **Omarchy-native** — reads your theme colors, proper `uwsm-app` integration
+- **Fast** — `curl` for downloads, logos load in background, nothing blocks the UI
+- **Live data** — channels from [iptv-org](https://github.com/iptv-org/iptv), cached 6 hours
 
 ## Install
 
@@ -23,26 +30,39 @@ Add to Omarchy menu (`~/.config/omarchy/extensions/omarchy-menu.jsonc`):
 
 ## Requirements
 
-`mpv` `curl` `socat` GTK4 libadwaita
-
-## How it works
-
-1. **Pick your country** — 🇺🇸 🇬🇧 🇩🇪 🇧🇷 🇯🇵 etc
-2. **Pick a category** — Sports, Movies, News, Entertainment...
-3. **Browse channels** — logos load in background
-4. **Play** — click or Enter, `+`/`-` to surf channels, `Esc` to go back
-
-Channels from [iptv-org](https://github.com/iptv-org/iptv), cached 6 hours. `F5` to refresh.
+`mpv` · `curl` · `socat` · GTK4 · libadwaita
 
 ## Keyboard
 
-| Key | Grid | Playing (mpv) |
-|-----|------|---------------|
-| `+`/`-` | Surf channels | Surf channels |
-| `Enter` | Play/Select | — |
-| `Esc` | Back | Back to grid |
-| `Arrows` | Navigate | — |
-| `Space` | — | Pause |
-| `Ctrl+F` | Search | — |
-| `F` | Fullscreen | — |
-| `F5` | Refresh cache | — |
+| Key | Home/Categories | Channels | Playing (mpv) |
+|-----|----------------|----------|---------------|
+| `↑↓←→` | Navigate grid | Navigate grid | — |
+| `Enter` | Select | Play channel | — |
+| `Esc` | — | Back | Back to grid |
+| `+`/`-` | — | Surf channels | Surf channels |
+| `Ctrl+F` | Search | Search | — |
+| `Space` | — | — | Pause/Resume |
+| `F` | — | Fullscreen | Fullscreen |
+| `F5` | Refresh | Refresh | — |
+
+## How it works
+
+```
+🇺🇸 Country → ⚽ Category → [Channel Grid] → ▶ Play
+                Esc←          Esc←           +/- surf, Esc←
+```
+
+1. Pick your country — flags + channel counts
+2. Pick a category — Sports, Movies, News, etc (from group-title)
+3. Browse channels — logos load in background
+4. Play — click or Enter, `+`/`-` to surf, `Esc` to go back
+
+mpv plays the stream. Keybindings inside mpv forward `+`/`-`/`Esc` back to the app via Unix socket IPC.
+
+## Design
+
+Reads your active Omarchy theme colors (`~/.config/omarchy/themes/*/colors.toml`) for native look. Works with any theme — Catppuccin, Tokyo Night, Gruvbox, etc.
+
+## License
+
+MIT
