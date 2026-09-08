@@ -1,7 +1,0 @@
-name = "iptv-proxy"
-main = "src/index.js"
-compatibility_date = "2024-01-01"
-account_id = "89fe3b617242b040ec3936d43caa2011"
-
-[env.production]
-routes = [{ pattern = "iptv.openroyleal.com/*", zone_name = "openroyleal.com" }]

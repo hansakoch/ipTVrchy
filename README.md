@@ -1,16 +1,16 @@
-# omarchy-tv
+# ipTVrchy
 
-Native IPTV player for [Omarchy](https://omarchy.org). Beautiful, fast, keyboard-first.
+Native IPTV player for [Omarchy](https://omarchy.org). JetBrainsMono Nerd Font. Pure Omarchy design.
 
-Browse live TV from around the world — pick your country, pick a category, start watching.
+Country → Category → Channels → Play. Browse live TV from around the world.
 
 ## Features
 
-- **Country → Category → Channels** — organized, not chaotic
-- **Channel surfing** — `+`/`-` to surf, OSD shows what's playing
+- **Omarchy-native** — reads your theme, JetBrainsMono Nerd Font, Nerd Font icons
+- **Country → Category → Channels** — organized browsing
+- **Channel surfing** — `+`/`-` to surf, OSD overlay
 - **Keyboard-first** — every action has a shortcut
-- **Omarchy-native** — reads your theme colors, proper `uwsm-app` integration
-- **Fast** — `curl` for downloads, logos load in background, nothing blocks the UI
+- **Fast** — curl for downloads, logos in background, nothing blocks UI
 - **Live data** — channels from [iptv-org](https://github.com/iptv-org/iptv), cached 6 hours
 
 ## Install
@@ -23,9 +23,9 @@ mkdir -p ~/.local/share/omarchy-tv
 cp categories.json mpv-input.conf mpv-script.lua ~/.local/share/omarchy-tv/
 ```
 
-Add to Omarchy menu (`~/.config/omarchy/extensions/omarchy-menu.jsonc`):
+Omarchy menu entry (`~/.config/omarchy/extensions/omarchy-menu.jsonc`):
 ```json
-"iptv": {"icon":"󰄶","label":"TV","description":"Live IPTV — worldwide channels","action":"omarchy-tv"},
+"iptv": {"icon":"󰄶","label":"ipTVrchy","description":"Live IPTV — worldwide channels","action":"omarchy-tv"},
 ```
 
 ## Requirements
@@ -34,34 +34,25 @@ Add to Omarchy menu (`~/.config/omarchy/extensions/omarchy-menu.jsonc`):
 
 ## Keyboard
 
-| Key | Home/Categories | Channels | Playing (mpv) |
-|-----|----------------|----------|---------------|
-| `↑↓←→` | Navigate grid | Navigate grid | — |
-| `Enter` | Select | Play channel | — |
-| `Esc` | — | Back | Back to grid |
-| `+`/`-` | — | Surf channels | Surf channels |
-| `Ctrl+F` | Search | Search | — |
-| `Space` | — | — | Pause/Resume |
-| `F` | — | Fullscreen | Fullscreen |
-| `F5` | Refresh | Refresh | — |
+| Key | Grid | Playing (mpv) |
+|-----|------|---------------|
+| `↑↓←→` | Navigate | — |
+| `Enter` | Select/Play | — |
+| `Esc` | Back | Back to grid |
+| `+`/`-` | Surf channels | Surf channels |
+| `Ctrl+F` | Search | — |
+| `Space` | — | Pause/Resume |
+| `F` | Fullscreen | Fullscreen |
+| `F5` | Refresh cache | — |
 
 ## How it works
 
 ```
-🇺🇸 Country → ⚽ Category → [Channel Grid] → ▶ Play
-                Esc←          Esc←           +/- surf, Esc←
+🇺🇸 Country → 🏈 Category → [Channel Logos] → ▶ Play
+    Esc←         Esc←          Esc←         +/- surf, Esc←
 ```
 
-1. Pick your country — flags + channel counts
-2. Pick a category — Sports, Movies, News, etc (from group-title)
-3. Browse channels — logos load in background
-4. Play — click or Enter, `+`/`-` to surf, `Esc` to go back
-
-mpv plays the stream. Keybindings inside mpv forward `+`/`-`/`Esc` back to the app via Unix socket IPC.
-
-## Design
-
-Reads your active Omarchy theme colors (`~/.config/omarchy/themes/*/colors.toml`) for native look. Works with any theme — Catppuccin, Tokyo Night, Gruvbox, etc.
+Channels from [iptv-org](https://github.com/iptv-org/iptv) — a community-maintained collection of freely available IPTV streams.
 
 ## License
 
