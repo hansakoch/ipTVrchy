@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ipTVrchy
+Comment=Live IPTV — worldwide channels
+Exec=omarchy-tv
+Icon=video-x-generic-symbolic
+Terminal=false
+Categories=AudioVideo;Video;TV;
+Keywords=iptv;tv;stream;live;video;channels;
