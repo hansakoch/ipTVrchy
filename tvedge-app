@@ -1,0 +1,717 @@
+#!/usr/bin/env python3
+"""
+Tvedge — IPTV player for Omarchy.
+Country → Category → Play → Surf with +/-.
+"""
+import gi
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Gtk, Adw, GLib, Gdk, Gio
+import hashlib, json, os, re, socket, subprocess, sys, time, threading
+from urllib.parse import urlparse
+from collections import Counter
+
+# ── Config ───────────────────────────────────────────────────────────────
+
+DATA_DIR = os.path.expanduser("~/.local/share/tvedge")
+CACHE_DIR = os.path.expanduser("~/.cache/tvedge")
+LOGO_CACHE = os.path.join(CACHE_DIR, "logos")
+APP_SOCKET = "/tmp/tvedge-app.sock"
+MPV_LOG = "/tmp/tvedge-mpv.log"
+CACHE_AGE = 6 * 3600
+MPV_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+IPTV_BASE = "https://iptv-org.github.io/iptv"
+for d in [DATA_DIR, CACHE_DIR, LOGO_CACHE]: os.makedirs(d, exist_ok=True)
+
+COUNTRIES = [
+    ("us", "United States", "🇺🇸"), ("gb", "United Kingdom", "🇬🇧"),
+    ("ca", "Canada", "🇨🇦"), ("au", "Australia", "🇦🇺"),
+    ("de", "Germany", "🇩🇪"), ("fr", "France", "🇫🇷"),
+    ("es", "Spain", "🇪🇸"), ("it", "Italy", "🇮🇹"),
+    ("pt", "Portugal", "🇵🇹"), ("nl", "Netherlands", "🇳🇱"),
+    ("se", "Sweden", "🇸🇪"), ("pl", "Poland", "🇵🇱"),
+    ("tr", "Turkey", "🇹🇷"), ("ar", "Argentina", "🇦🇷"),
+    ("br", "Brazil", "🇧🇷"), ("mx", "Mexico", "🇲🇽"),
+    ("cl", "Chile", "🇨🇱"), ("co", "Colombia", "🇨🇴"),
+    ("in", "India", "🇮🇳"), ("jp", "Japan", "🇯🇵"),
+    ("kr", "South Korea", "🇰🇷"), ("ph", "Philippines", "🇵🇭"),
+    ("ng", "Nigeria", "🇳🇬"), ("za", "South Africa", "🇿🇦"),
+    ("ke", "Kenya", "🇰🇪"), ("eg", "Egypt", "🇪🇬"),
+]
+
+CAT_ICONS = {
+    "General": "📺", "Entertainment": "🎭", "Movies": "🎬", "Series": "📺",
+    "News": "📰", "Sports": "⚽", "Kids": "🧒", "Music": "🎵",
+    "Documentary": "🎥", "Comedy": "😂", "Classic": "🎞️", "Family": "👨‍👩‍👧",
+    "Education": "📚", "Science": "🔬", "Lifestyle": "🌿", "Culture": "🎨",
+    "Cooking": "🍳", "Business": "💹", "Legislative": "🏛️", "Religious": "🙏",
+    "Outdoor": "🏕️", "Travel": "✈️", "Auto": "🏎️", "Weather": "🌤️",
+    "Animation": "🎨", "Shop": "🛍️", "Undefined": "📺",
+}
+
+# ── M3U parser ───────────────────────────────────────────────────────────
+
+def clean_name(n):
+    n = re.sub(r'\s*\(\d+p\)\s*', ' ', n)
+    n = re.sub(r'\s*\[?(?:Geo-blocked|Not 24\/7)\]?\s*', '', n, flags=re.I)
+    n = re.sub(r'\s*\[\s*(?:SD|HD)\s*\]\s*', '', n, flags=re.I)
+    return re.sub(r'\s+', ' ', n).strip()
+
+def logo_hash(url):
+    if not url: return None
+    h = hashlib.md5(url.encode()).hexdigest()
+    ext = os.path.splitext(urlparse(url).path)[1][:5] or ".png"
+    return os.path.join(LOGO_CACHE, f"{h}{ext}")
+
+def parse_m3u(text):
+    lines = text.split('\n')
+    entries, i = [], 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("#EXTINF"):
+            nm = re.search(r",([^,]+)$", line)
+            gm = re.search(r'group-title="([^"]*)"', line)
+            lm = re.search(r'tvg-logo="([^"]*)"', line)
+            ua = re.search(r'http-user-agent="([^"]*)"', line)
+            logo_url = lm.group(1) if lm else ""
+            cached = logo_hash(logo_url)
+            i += 1
+            while i < len(lines) and lines[i].strip().startswith("#"):
+                v = re.search(r'http-user-agent=(.+)', lines[i].strip())
+                if v and not ua: ua = type('X',(object,),{'group':lambda s,n:v.group(1)})()
+                i += 1
+            if i < len(lines):
+                url = lines[i].strip()
+                if url and not url.startswith("#"):
+                    group = gm.group(1) if gm else "Undefined"
+                    entries.append({
+                        "name": clean_name(nm.group(1).strip() if nm else "?"),
+                        "group": group,
+                        "logo_url": logo_url,
+                        "logo_file": cached if cached and os.path.exists(cached) else None,
+                        "user_agent": ua.group(1) if ua else "",
+                        "url": url,
+                    })
+                i += 1
+        else: i += 1
+    seen, out = set(), []
+    for c in entries:
+        if c["url"] not in seen: seen.add(c["url"]); out.append(c)
+    return out
+
+# ── Network ──────────────────────────────────────────────────────────────
+
+def http_get(url, timeout=15):
+    try:
+        r = subprocess.run(["curl","-4","-sL","--max-time",str(timeout),
+                           "-H","User-Agent: Tvedge/2.0", url],
+                          capture_output=True, timeout=timeout+2)
+        return r.stdout.decode("utf-8", errors="ignore")
+    except: return ""
+
+def download_logo(url):
+    if not url: return None
+    p = logo_hash(url)
+    if p and os.path.exists(p): return p
+    try:
+        subprocess.run(["curl","-4","-sL","--max-time","5",
+                       "-H","User-Agent: Tvedge/2.0","-o",p,url],
+                      capture_output=True, timeout=8)
+        return p if os.path.exists(p) and os.path.getsize(p) > 0 else None
+    except: return None
+
+# ── Channel cache ────────────────────────────────────────────────────────
+
+_cache = {}  # cc → [channels]
+_loading = set()
+
+def cache_path(cc):
+    return os.path.join(CACHE_DIR, f"country_{cc}.m3u")
+
+def load_country(cc, cb):
+    if cc in _cache: cb(_cache[cc]); return
+    if cc in _loading: return
+    _loading.add(cc)
+    def worker():
+        cp = cache_path(cc)
+        text = ""
+        if os.path.exists(cp) and time.time()-os.path.getmtime(cp) < CACHE_AGE:
+            with open(cp,"r",encoding="utf-8",errors="ignore") as f: text=f.read()
+        if not text:
+            text = http_get(f"{IPTV_BASE}/countries/{cc}.m3u")
+            if text:
+                try:
+                    with open(cp,"w") as f: f.write(text)
+                except: pass
+            elif os.path.exists(cp):
+                with open(cp,"r",encoding="utf-8",errors="ignore") as f: text=f.read()
+        chs = parse_m3u(text) if text else []
+        _cache[cc] = chs
+        _loading.discard(cc)
+        GLib.idle_add(cb, chs)
+    threading.Thread(target=worker, daemon=True).start()
+
+def get_categories(channels):
+    """Extract category names and counts from channels."""
+    counts = Counter()
+    for ch in channels:
+        # Handle multi-group like "Movies;Series"
+        for g in ch["group"].split(";"):
+            g = g.strip()
+            if g: counts[g] += 1
+    # Sort by count descending, skip tiny ones
+    return [(name, count) for name, count in counts.most_common() if count >= 2]
+
+# ── IPC from mpv ─────────────────────────────────────────────────────────
+
+_app_ref = None
+
+def ipc_start():
+    if os.path.exists(APP_SOCKET):
+        try: os.unlink(APP_SOCKET)
+        except: pass
+    def listen():
+        try:
+            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            srv.bind(APP_SOCKET); srv.listen(1); srv.settimeout(1.0)
+            while True:
+                try:
+                    conn, _ = srv.accept()
+                    data = conn.recv(1024).decode(); conn.close()
+                    if data and _app_ref:
+                        msg = json.loads(data.strip())
+                        GLib.idle_add(_app_ref.handle_ipc, msg.get("action",""))
+                except socket.timeout: continue
+                except: pass
+        except: pass
+    threading.Thread(target=listen, daemon=True).start()
+
+# ── CSS ──────────────────────────────────────────────────────────────────
+
+CSS = """
+window { background:#080808; }
+.hdr { background:#0c0c0c; padding:14px 28px; border-bottom:1px solid #181818; }
+.hdr-title { font-size:16px; font-weight:700; color:#e50914; }
+.hdr-bc { font-size:14px; color:#555; margin:0 6px; }
+.hdr-cat { font-size:14px; color:#999; font-weight:500; }
+.hdr-count { font-size:12px; color:#444; }
+.status { background:#0c0c0c; padding:8px 28px; border-top:1px solid #181818; }
+.status-lbl { font-size:12px; color:#555; }
+.status-lbl.error { color:#e50914; }
+.search-bar { background:#0e0e0e; padding:8px 28px; border-bottom:1px solid #181818; }
+.search-entry { background:#181818; border:1px solid #282828; border-radius:8px;
+    padding:8px 14px; color:#eee; font-size:14px; caret-color:#e50914; }
+.search-entry:focus { border-color:#e50914; outline:none; }
+.grid-btn { background:#111; border:2px solid #181818; border-radius:16px;
+    padding:20px 28px; margin:8px; min-height:72px; }
+.grid-btn:hover { background:#151515; border-color:#252525; }
+.grid-btn:focus { background:#151515; border-color:#e50914; outline:none; }
+.grid-icon { font-size:28px; }
+.grid-name { font-size:15px; color:#ddd; font-weight:600; }
+.grid-sub { font-size:11px; color:#555; }
+.ch-btn { background:transparent; border:none; padding:0; margin:4px; }
+.ch-btn:hover { background:rgba(229,9,20,0.08); border-radius:8px; }
+.ch-btn:focus { background:rgba(229,9,20,0.12); border-radius:8px; outline:none; }
+.ch-btn.playing { background:rgba(70,211,105,0.1); border-radius:8px; }
+.load-lbl { font-size:14px; color:#555; }
+scrollbar slider { min-width:4px; background:#1a1a1a; border-radius:2px; }
+"""
+
+# ── App ──────────────────────────────────────────────────────────────────
+
+class Tvedge(Adw.Application):
+    def __init__(self):
+        super().__init__(application_id="org.omarchy.tvedge",
+                         flags=Gio.ApplicationFlags.FLAGS_NONE)
+        global _app_ref; _app_ref = self
+        self.all_channels = []    # all channels for current country
+        self.channels = []        # currently displayed (filtered or all)
+        self.ch_idx = -1
+        self.state = "home"       # home | loading | cats | channels | playing
+        self.btns = []
+        self.nav = []
+        self.current_cc = ""
+        self._mpv = None; self._mpv_t0 = 0; self._watch = None; self._mpv_log = None
+        self.win = None
+
+    def do_activate(self):
+        try: self._build()
+        except Exception as e:
+            import traceback; traceback.print_exc()
+
+    def _build(self):
+        Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+        css = Gtk.CssProvider(); css.load_from_string(CSS)
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        self.win = Adw.ApplicationWindow(application=self)
+        self.win.set_title("Tvedge")
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.win.set_content(root)
+
+        # Header
+        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        hdr.add_css_class("hdr")
+        t = Gtk.Label(label="Tvedge"); t.add_css_class("hdr-title"); hdr.append(t)
+        self.bc_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.bc_box.set_visible(False); hdr.append(self.bc_box)
+        sp = Gtk.Box(); sp.set_hexpand(True); hdr.append(sp)
+        self.lbl_count = Gtk.Label(); self.lbl_count.add_css_class("hdr-count")
+        self.lbl_count.set_xalign(1); hdr.append(self.lbl_count)
+        root.append(hdr)
+
+        # Search
+        self.search_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.search_bar.add_css_class("search-bar"); self.search_bar.set_visible(False)
+        self.search_entry = Gtk.Entry()
+        self.search_entry.set_placeholder_text("Search channels…")
+        self.search_entry.set_hexpand(True)
+        self.search_entry.connect("changed", self._on_search)
+        self.search_entry.connect("activate", lambda e: self._play(0) if self.btns else None)
+        self.search_bar.append(self.search_entry)
+        root.append(self.search_bar)
+
+        # Stack
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        self.stack.set_transition_duration(150)
+
+        sw = Gtk.ScrolledWindow(); sw.set_vexpand(True)
+        sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.flow = Gtk.FlowBox()
+        self.flow.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.flow.set_homogeneous(True); self.flow.set_focusable(False)
+        self.flow.set_row_spacing(12); self.flow.set_column_spacing(12)
+        self.flow.set_margin_start(32); self.flow.set_margin_end(32)
+        self.flow.set_margin_top(24); self.flow.set_margin_bottom(24)
+        sw.set_child(self.flow)
+
+        self.load_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self.load_box.set_valign(Gtk.Align.CENTER); self.load_box.set_halign(Gtk.Align.CENTER)
+        self.load_lbl = Gtk.Label(); self.load_lbl.add_css_class("load-lbl")
+        self.load_box.append(self.load_lbl)
+
+        self.stack.add_named(sw, "grid")
+        self.stack.add_named(self.load_box, "load")
+        root.append(self.stack)
+
+        # Status
+        sb = Gtk.Box(); sb.add_css_class("status")
+        self.status = Gtk.Label(); self.status.add_css_class("status-lbl")
+        self.status.set_xalign(0); self.status.set_hexpand(True)
+        sb.append(self.status); root.append(sb)
+
+        # Keys
+        kc = Gtk.EventControllerKey()
+        kc.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        kc.connect("key-pressed", self._on_key)
+        self.win.add_controller(kc)
+        self.win.connect("close-request", lambda w: (self._mpv_stop(), self.quit(), True)[-1])
+
+        ipc_start()
+        self._home()
+        self.win.present(); self.win.fullscreen()
+        try: print("Tvedge ready", flush=True)
+        except: pass
+
+    # ── Home: country selection ──────────────────────────────────────────
+
+    def _home(self):
+        self.nav = []; self.all_channels = []; self.channels = []; self.ch_idx = -1
+        self.state = "home"; self.current_cc = ""; self._mpv_stop()
+        self._bc_update(); self._clear()
+        self.flow.set_max_children_per_line(4)
+        self.flow.set_min_children_per_line(2)
+        self.stack.set_visible_child_name("grid")
+        self.search_bar.set_visible(False)
+
+        for cc, name, flag in COUNTRIES:
+            btn = Gtk.Button()
+            btn.add_css_class("grid-btn"); btn.set_size_request(180, 72)
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+            box.set_valign(Gtk.Align.CENTER)
+            fl = Gtk.Label(label=flag); fl.add_css_class("grid-icon"); box.append(fl)
+            txt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            txt.set_valign(Gtk.Align.CENTER)
+            nm = Gtk.Label(label=name); nm.add_css_class("grid-name"); nm.set_xalign(0)
+            txt.append(nm)
+            cnt = Gtk.Label(); cnt.add_css_class("grid-sub"); cnt.set_xalign(0)
+            txt.append(cnt)
+            box.append(txt)
+            btn.set_child(box)
+            btn.connect("clicked", lambda b, c=cc, n=name: self._pick_country(c, n))
+            self.flow.append(btn); self.btns.append(btn)
+            self._load_count(cc, cnt)
+
+        self.lbl_count.set_label(""); self.status.set_label("")
+        self.status.remove_css_class("error")
+        if self.btns: self.win.set_focus(self.btns[0])
+
+    def _load_count(self, cc, lbl):
+        cp = cache_path(cc)
+        def worker():
+            count = 0
+            if os.path.exists(cp) and time.time()-os.path.getmtime(cp) < CACHE_AGE:
+                with open(cp,"r",encoding="utf-8",errors="ignore") as f:
+                    count = f.read().count("#EXTINF")
+            else:
+                text = http_get(f"{IPTV_BASE}/countries/{cc}.m3u", timeout=10)
+                if text:
+                    count = text.count("#EXTINF")
+                    try:
+                        with open(cp,"w") as f: f.write(text)
+                    except: pass
+            if count > 0:
+                GLib.idle_add(lbl.set_label, f"{count} channels")
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pick_country(self, cc, name):
+        self.current_cc = cc
+        self.nav = [(cc, name)]
+        self._bc_update()
+        self.state = "loading"
+        self.load_lbl.set_label(f"Loading {name}…")
+        self.stack.set_visible_child_name("load")
+        load_country(cc, lambda chs: self._on_country_loaded(chs, name))
+
+    def _on_country_loaded(self, channels, country_name):
+        self.all_channels = channels
+        self._show_cats(channels, country_name)
+        return False
+
+    # ── Categories ───────────────────────────────────────────────────────
+
+    def _show_cats(self, channels, country_name):
+        self.state = "cats"
+        self._clear()
+        self.flow.set_max_children_per_line(4)
+        self.flow.set_min_children_per_line(2)
+        self.stack.set_visible_child_name("grid")
+
+        cats = get_categories(channels)
+        # "All" card first
+        btn = self._make_cat_btn("📺", f"All {country_name}", len(channels))
+        btn.connect("clicked", lambda b: self._show_channels(channels, f"All {country_name}"))
+        self.flow.append(btn); self.btns.append(btn)
+
+        for cat_name, count in cats:
+            icon = CAT_ICONS.get(cat_name, "📺")
+            btn = self._make_cat_btn(icon, cat_name, count)
+            btn.connect("clicked", lambda b, cn=cat_name: self._filter_cat(cn))
+            self.flow.append(btn); self.btns.append(btn)
+
+        self.lbl_count.set_label(f"{len(channels)} total")
+        self.status.set_label(f"{len(cats)} categories")
+        self.status.remove_css_class("error")
+        if self.btns: self.win.set_focus(self.btns[0])
+
+    def _make_cat_btn(self, icon, name, count):
+        btn = Gtk.Button()
+        btn.add_css_class("grid-btn"); btn.set_size_request(200, 72)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        box.set_valign(Gtk.Align.CENTER)
+        ico = Gtk.Label(label=icon); ico.add_css_class("grid-icon"); box.append(ico)
+        txt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        txt.set_valign(Gtk.Align.CENTER)
+        nm = Gtk.Label(label=name); nm.add_css_class("grid-name"); nm.set_xalign(0)
+        txt.append(nm)
+        cnt = Gtk.Label(label=f"{count} channels"); cnt.add_css_class("grid-sub"); cnt.set_xalign(0)
+        txt.append(cnt)
+        box.append(txt)
+        btn.set_child(box)
+        return btn
+
+    def _filter_cat(self, cat_name):
+        filtered = [c for c in self.all_channels
+                    if cat_name in [g.strip() for g in c["group"].split(";")]]
+        self.nav = [(self.current_cc, self.nav[0][1] if self.nav else ""), (cat_name, cat_name)]
+        self._bc_update()
+        self._show_channels(filtered, cat_name)
+
+    # ── Channels ─────────────────────────────────────────────────────────
+
+    def _show_channels(self, channels, label=""):
+        self.channels = channels; self.ch_idx = -1; self.state = "channels"
+        self._clear()
+        self.flow.set_max_children_per_line(6)
+        self.flow.set_min_children_per_line(3)
+        for i, ch in enumerate(channels):
+            btn = Gtk.Button()
+            btn.add_css_class("ch-btn")
+            btn.set_size_request(184, 184); btn.set_focusable(True)
+            btn._idx = i
+            img = Gtk.Image(); img.set_pixel_size(160); img.set_size_request(160, 160)
+            lp = ch.get("logo_file")
+            if lp and os.path.exists(lp):
+                try: img.set_from_paintable(Gdk.Texture.new_from_filename(lp))
+                except: img.set_from_icon_name("video-x-generic-symbolic")
+            else: img.set_from_icon_name("video-x-generic-symbolic")
+            btn.set_child(img)
+            btn.connect("clicked", lambda b, i=i: self._play(i))
+            self.flow.append(btn); self.btns.append(btn)
+        self.lbl_count.set_label(f"{len(channels)}")
+        self.status.set_label(f"{len(channels)} channels")
+        self.status.remove_css_class("error")
+        self.stack.set_visible_child_name("grid")
+        if self.btns: self.win.set_focus(self.btns[0])
+        self._load_logos(channels)
+
+    def _load_logos(self, channels):
+        def worker():
+            for i, ch in enumerate(channels):
+                url = ch.get("logo_url")
+                if not url or ch.get("logo_file"): continue
+                lp = download_logo(url)
+                if lp: ch["logo_file"] = lp; GLib.idle_add(self._set_logo, i, lp)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _set_logo(self, idx, path):
+        if idx < len(self.btns):
+            img = self.btns[idx].get_child()
+            if img and os.path.exists(path):
+                try: img.set_from_paintable(Gdk.Texture.new_from_filename(path))
+                except: pass
+        return False
+
+    def _clear(self):
+        self.btns = []
+        while self.flow.get_first_child(): self.flow.remove(self.flow.get_first_child())
+
+    def _bc_update(self):
+        while self.bc_box.get_first_child(): self.bc_box.remove(self.bc_box.get_first_child())
+        self.bc_box.set_visible(bool(self.nav))
+        for i,(_, nm) in enumerate(self.nav):
+            if i > 0:
+                s = Gtk.Label(label="›"); s.add_css_class("hdr-bc"); self.bc_box.append(s)
+            l = Gtk.Label(label=nm); l.add_css_class("hdr-cat"); self.bc_box.append(l)
+
+    # ── Search ───────────────────────────────────────────────────────────
+
+    def _toggle_search(self):
+        vis = not self.search_bar.get_visible()
+        self.search_bar.set_visible(vis)
+        if vis: self.search_entry.grab_focus()
+        else:
+            self.search_entry.set_text("")
+            if self.state == "search": self._back()
+
+    def _on_search(self, entry):
+        q = entry.get_text().strip()
+        if len(q) < 2: return
+        src = self.all_channels if self.all_channels else self.channels
+        results = [c for c in src
+                   if q in c["name"].lower() or q in c.get("group","").lower()]
+        self.state = "search"
+        self.channels = results; self.ch_idx = -1
+        self._clear()
+        self.flow.set_max_children_per_line(6); self.flow.set_min_children_per_line(3)
+        for i, ch in enumerate(results):
+            btn = Gtk.Button()
+            btn.add_css_class("ch-btn"); btn.set_size_request(184, 184)
+            btn.set_focusable(True); btn._idx = i
+            img = Gtk.Image(); img.set_pixel_size(160); img.set_size_request(160, 160)
+            img.set_from_icon_name("video-x-generic-symbolic")
+            btn.set_child(img)
+            btn.connect("clicked", lambda b, i=i: self._play(i))
+            self.flow.append(btn); self.btns.append(btn)
+        self.lbl_count.set_label(f"{len(results)}")
+        self.stack.set_visible_child_name("grid")
+
+    # ── Playback ─────────────────────────────────────────────────────────
+
+    def _play(self, idx):
+        if idx < 0 or idx >= len(self.channels): return
+        ch = self.channels[idx]
+        if 0 <= self.ch_idx < len(self.btns):
+            self.btns[self.ch_idx].remove_css_class("playing")
+        self.ch_idx = idx; self.state = "playing"
+        if idx < len(self.btns): self.btns[idx].add_css_class("playing")
+        self.status.set_label(f"▶  {ch['name']}")
+        self.status.remove_css_class("error")
+        self._mpv_play(ch["url"], ch.get("user_agent",""))
+        self._mpv_watch()
+
+    def _mpv_play(self, url, ua=""):
+        if self._mpv_alive():
+            try:
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.settimeout(0.3); s.connect("/tmp/tvedge-mpv.sock")
+                s.send(json.dumps({"command":["loadfile",url,"replace"]}).encode()+b"\n")
+                s.close(); self._mpv_t0 = time.time(); return
+            except: pass
+        self._mpv_stop()
+        if os.path.exists("/tmp/tvedge-mpv.sock"):
+            try: os.unlink("/tmp/tvedge-mpv.sock")
+            except: pass
+        cmd = ["mpv","--no-terminal",
+            "--hwdec=auto","--cache=yes","--cache-secs=30",
+            "--vd-lavc-threads=2","--demuxer-max-bytes=50MiB",
+            "--vo=gpu","--network-timeout=10",
+            "--no-input-default-bindings","--fullscreen",
+            f"--user-agent={ua or MPV_UA}",
+            "--input-ipc-server=/tmp/tvedge-mpv.sock",
+            f"--input-conf={os.path.join(DATA_DIR,'mpv-input.conf')}", url]
+        try:
+            self._mpv_log = open(MPV_LOG,"w")
+            self._mpv = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=self._mpv_log)
+            self._mpv_t0 = time.time()
+        except Exception as e:
+            self._mpv = None; self._err(f"mpv failed: {e}")
+
+    def _mpv_alive(self): return self._mpv and self._mpv.poll() is None
+
+    def _mpv_watch(self):
+        if self._watch: GLib.source_remove(self._watch)
+        self._watch = GLib.timeout_add(500, self._mpv_check)
+
+    def _mpv_check(self):
+        if not self._mpv_alive():
+            if time.time()-self._mpv_t0 < 3:
+                err = ""
+                try:
+                    if self._mpv_log: self._mpv_log.flush()
+                    if os.path.exists(MPV_LOG):
+                        with open(MPV_LOG) as f:
+                            for ln in reversed(f.readlines()[-10:]):
+                                l = ln.strip().lower()
+                                if any(k in l for k in ["error","failed","403","forbidden"]):
+                                    err = ln.strip()[:120]; break
+                except: pass
+                if self.state == "playing":
+                    self._err(f"Stream failed: {err}" if err else "Stream failed to load")
+            if self.state == "playing": self._back_to_grid()
+            return False
+        return True
+
+    def _mpv_stop(self):
+        if self._mpv_alive():
+            self._mpv.terminate()
+            try: self._mpv.wait(timeout=1)
+            except:
+                try: self._mpv.kill()
+                except: pass
+        self._mpv = None
+        for f in ["/tmp/tvedge-mpv.sock"]:
+            if os.path.exists(f):
+                try: os.unlink(f)
+                except: pass
+        if self._mpv_log:
+            try: self._mpv_log.close()
+            except: pass
+            self._mpv_log = None
+
+    def _err(self, msg):
+        self.status.set_label(f"✗ {msg}")
+        self.status.add_css_class("error")
+
+    def _surf(self, delta):
+        if not self.channels: return
+        nxt = (self.ch_idx + delta) % len(self.channels)
+        self._play(nxt)
+
+    # ── Keys ─────────────────────────────────────────────────────────────
+
+    def _on_key(self, ctrl, keyval, keycode, state):
+        k = Gdk.keyval_name(keyval)
+        s = self.state
+
+        if k == "f" and state & Gdk.ModifierType.CONTROL_MASK:
+            self._toggle_search(); return True
+        if k == "Escape":
+            if self.search_bar.get_visible():
+                self.search_bar.set_visible(False); self.search_entry.set_text("")
+                if s == "search": self._back()
+                return True
+            self._back(); return True
+        if k in ("plus","equal","KP_Add") and s in ("channels",):
+            self._surf(1); return True
+        if k in ("minus","underscore","KP_Subtract") and s in ("channels",):
+            self._surf(-1); return True
+        if k == "f" and not (state & Gdk.ModifierType.CONTROL_MASK):
+            if self.win.is_fullscreen(): self.win.unfullscreen()
+            else: self.win.fullscreen()
+            return True
+        if k == "space" and self._mpv_alive():
+            try:
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.settimeout(0.3); sock.connect("/tmp/tvedge-mpv.sock")
+                sock.send(json.dumps({"command":["cycle","pause"]}).encode()+b"\n")
+                sock.close()
+            except: pass
+            return True
+        if k == "F5":
+            for f in os.listdir(CACHE_DIR):
+                if f.startswith("country_") and f.endswith(".m3u"):
+                    try: os.remove(os.path.join(CACHE_DIR,f))
+                    except: pass
+            _cache.clear(); self._home(); return True
+        if k in ("Return","KP_Enter"):
+            foc = self.win.get_focus()
+            if foc and hasattr(foc, "_idx"): self._play(foc._idx)
+            # For grid buttons, the click handler is connected
+            return True
+        if s in ("home","cats","channels","search"):
+            cols = 4 if s in ("home","cats") else 6
+            if k == "Down":   self._nav(self.btns, cols);  return True
+            if k == "Up":     self._nav(self.btns, -cols); return True
+            if k == "Right":  self._nav(self.btns, 1);     return True
+            if k == "Left":   self._nav(self.btns, -1);    return True
+        return False
+
+    def handle_ipc(self, action):
+        if action == "next": self._surf(1)
+        elif action == "prev": self._surf(-1)
+        elif action == "quit": self._back()
+        return False
+
+    def _back(self):
+        if self._watch: GLib.source_remove(self._watch); self._watch = None
+        if self.state == "playing":
+            self._mpv_stop(); self.state = "channels"
+            self.status.set_label(""); self.status.remove_css_class("error")
+            if 0 <= self.ch_idx < len(self.btns):
+                self.btns[self.ch_idx].grab_focus()
+            return
+        if self.state in ("channels", "search"):
+            # Back to categories
+            self._mpv_stop()
+            if self.all_channels:
+                country_name = self.nav[0][1] if self.nav else ""
+                self.nav = [self.nav[0]] if self.nav else []
+                self._bc_update()
+                self._show_cats(self.all_channels, country_name)
+            else:
+                self._home()
+            return
+        if self.state == "cats":
+            self._home(); return
+        self._mpv_stop(); self._home()
+
+    def _back_to_grid(self):
+        if self._watch: GLib.source_remove(self._watch); self._watch = None
+        self.state = "channels"
+        if 0 <= self.ch_idx < len(self.btns):
+            self.btns[self.ch_idx].grab_focus()
+
+    def _nav(self, widgets, delta):
+        if not widgets: return
+        foc = self.win.get_focus(); cur = -1; c = foc
+        while c:
+            if c in widgets: cur = widgets.index(c); break
+            c = c.get_parent()
+        nxt = max(0, min(len(widgets)-1, (cur+delta) if cur>=0 else 0))
+        widgets[nxt].grab_focus()
+
+    def do_shutdown(self):
+        self._mpv_stop()
+        if os.path.exists(APP_SOCKET):
+            try: os.unlink(APP_SOCKET)
+            except: pass
+        Adw.Application.do_shutdown(self)
+
+if __name__ == "__main__":
+    sys.excepthook = lambda t,v,tb: __import__('traceback').print_exception(t,v,tb)
+    try: print("Tvedge starting…",flush=True)
+    except: pass
+    Tvedge().run(sys.argv)

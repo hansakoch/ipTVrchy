@@ -1,0 +1,40 @@
+{
+  "base_url": "https://iptv-org.github.io/iptv",
+  "categories": [
+    {"id": "sports",        "name": "Sports",          "icon": "⚽", "source": "categories/sports.m3u"},
+    {"id": "entertainment", "name": "Entertainment",   "icon": "🎭", "source": "categories/entertainment.m3u"},
+    {"id": "movies",        "name": "Movies",          "icon": "🎬", "source": "categories/movies.m3u"},
+    {"id": "news",          "name": "News",            "icon": "📰", "source": "categories/news.m3u"},
+    {"id": "series",        "name": "Series",          "icon": "📺", "source": "categories/series.m3u"},
+    {"id": "documentary",   "name": "Documentary",     "icon": "🎥", "source": "categories/documentary.m3u"},
+    {"id": "comedy",        "name": "Comedy",          "icon": "😂", "source": "categories/comedy.m3u"},
+    {"id": "kids",          "name": "Kids",            "icon": "🧒", "source": "categories/kids.m3u"},
+    {"id": "music",         "name": "Music",           "icon": "🎵", "source": "categories/music.m3u"},
+    {"id": "classic",       "name": "Classic",         "icon": "🎞️", "source": "categories/classic.m3u"},
+    {"id": "family",        "name": "Family",          "icon": "👨‍👩‍👧", "source": "categories/family.m3u"},
+    {"id": "science",       "name": "Science",         "icon": "🔬", "source": "categories/science.m3u"},
+    {"id": "auto",          "name": "Auto",            "icon": "🏎️", "source": "categories/auto.m3u"},
+    {"id": "business",      "name": "Business",        "icon": "💹", "source": "categories/business.m3u"},
+    {"id": "legislative",   "name": "Government",      "icon": "🏛️", "source": "categories/legislative.m3u"},
+    {"id": "cooking",       "name": "Cooking",         "icon": "🍳", "source": "categories/cooking.m3u"},
+    {"id": "education",     "name": "Education",       "icon": "📚", "source": "categories/education.m3u"},
+    {"id": "weather",       "name": "Weather",         "icon": "🌤️", "source": "categories/weather.m3u"},
+    {"id": "culture",       "name": "Culture",         "icon": "🎨", "source": "categories/culture.m3u"},
+    {"id": "lifestyle",     "name": "Lifestyle",       "icon": "🌿", "source": "categories/lifestyle.m3u"},
+    {"id": "countries",     "name": "By Country",      "icon": "🌍", "subcategories": [
+        {"id": "us", "name": "United States",  "icon": "🇺🇸", "source": "countries/us.m3u"},
+        {"id": "gb", "name": "United Kingdom", "icon": "🇬🇧", "source": "countries/gb.m3u"},
+        {"id": "ca", "name": "Canada",         "icon": "🇨🇦", "source": "countries/ca.m3u"},
+        {"id": "au", "name": "Australia",      "icon": "🇦🇺", "source": "countries/au.m3u"},
+        {"id": "de", "name": "Germany",        "icon": "🇩🇪", "source": "countries/de.m3u"},
+        {"id": "fr", "name": "France",         "icon": "🇫🇷", "source": "countries/fr.m3u"},
+        {"id": "es", "name": "Spain",          "icon": "🇪🇸", "source": "countries/es.m3u"},
+        {"id": "it", "name": "Italy",          "icon": "🇮🇹", "source": "countries/it.m3u"},
+        {"id": "jp", "name": "Japan",          "icon": "🇯🇵", "source": "countries/jp.m3u"},
+        {"id": "kr", "name": "South Korea",    "icon": "🇰🇷", "source": "countries/kr.m3u"},
+        {"id": "in", "name": "India",          "icon": "🇮🇳", "source": "countries/in.m3u"},
+        {"id": "br", "name": "Brazil",         "icon": "🇧🇷", "source": "countries/br.m3u"},
+        {"id": "mx", "name": "Mexico",         "icon": "🇲🇽", "source": "countries/mx.m3u"}
+    ]}
+  ]
+}
