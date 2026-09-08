@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-omarchy-tv — Beautiful IPTV for Omarchy.
-Country → Category → Channels → Play.
-DHH would approve.
+ipTVrchy — Native IPTV for Omarchy.
+Country → Category → Channels → Play. Minimal, fast, beautiful.
 """
 import gi
 gi.require_version("Gtk", "4.0")
@@ -15,17 +14,16 @@ from collections import Counter
 # ── Identity ─────────────────────────────────────────────────────────────
 
 APP_NAME    = "omarchy-tv"
-APP_TITLE   = "Omarchy TV"
+APP_TITLE   = "ipTVrchy"
 APP_ID      = "org.omarchy.tv"
 DATA_DIR    = os.path.expanduser("~/.local/share/omarchy-tv")
 CACHE_DIR   = os.path.expanduser("~/.cache/omarchy-tv")
 LOGO_DIR    = os.path.join(CACHE_DIR, "logos")
-CONF_DIR    = os.path.join(DATA_DIR)
 APP_SOCKET  = f"/tmp/{APP_NAME}-app.sock"
 MPV_SOCKET  = f"/tmp/{APP_NAME}-mpv.sock"
 MPV_LOG     = f"/tmp/{APP_NAME}-mpv.log"
-MPV_INPUT   = os.path.join(CONF_DIR, "mpv-input.conf")
-IPTV_BASE   = "https://iptv-org.github.io/iptv"
+MPV_INPUT   = os.path.join(DATA_DIR, "mpv-input.conf")
+IPTV_BASE   = "https://iptv.openroyleal.com"
 CACHE_AGE   = 6 * 3600
 MPV_UA      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 for d in [DATA_DIR, CACHE_DIR, LOGO_DIR]: os.makedirs(d, exist_ok=True)
@@ -54,34 +52,37 @@ CAT_ICONS = {
     "Shop":"🛍️","Undefined":"📺",
 }
 
-# ── Colors — pulled from Omarchy theme ───────────────────────────────────
+# ── Theme colors ─────────────────────────────────────────────────────────
 
 def _read_theme():
-    """Read current Omarchy theme colors."""
     try:
-        # Find current theme
-        home = os.path.expanduser("~")
-        link = os.path.join(home, ".config/omarchy/themes/current")
-        if os.path.islink(link):
-            target = os.readlink(link)
-        else:
-            target = "/usr/share/omarchy/themes/catppuccin"
-        colors_path = os.path.join(target, "colors.toml")
-        if not os.path.exists(colors_path):
-            colors_path = "/usr/share/omarchy/themes/catppuccin/colors.toml"
-        colors = {}
-        with open(colors_path) as f:
+        link = os.path.expanduser("~/.config/omarchy/themes/current")
+        target = os.readlink(link) if os.path.islink(link) else "/usr/share/omarchy/themes/catppuccin"
+        p = os.path.join(target, "colors.toml")
+        if not os.path.exists(p): p = "/usr/share/omarchy/themes/catppuccin/colors.toml"
+        c = {}
+        with open(p) as f:
             for line in f:
                 m = re.match(r'(\w+)\s*=\s*"(#\w+)"', line.strip())
-                if m: colors[m.group(1)] = m.group(2)
-        return colors
-    except:
-        return {}
+                if m: c[m.group(1)] = m.group(2)
+        return c
+    except: return {}
 
-_theme = _read_theme()
+_T = _read_theme()
+def C(n, fb): return _T.get(n, fb)
 
-def C(name, fallback):
-    return _theme.get(name, fallback)
+BG      = C("background","#1e1e2e")
+BG_D    = C("dark_background","#161622")
+BG_DD   = C("darker_background","#101019")
+BG_L    = C("lighter_background","#313244")
+FG      = C("foreground","#cdd6f4")
+FG_D    = C("dark_foreground","#6c7086")
+FG_L    = C("light_foreground","#bac2de")
+ACCENT  = C("accent","#89b4fa")
+GREEN   = C("green","#a6e3a1")
+RED     = C("red","#f38ba8")
+MUTED   = C("muted","#585b70")
+SEL     = C("selection","#45475a")
 
 # ── M3U Parser ───────────────────────────────────────────────────────────
 
@@ -112,8 +113,7 @@ def parse_m3u(text):
             i += 1
             while i < len(lines) and lines[i].strip().startswith("#"):
                 v = re.search(r'http-user-agent=(.+)', lines[i].strip())
-                if v and not ua:
-                    ua = type('UA',(object,),{'group':lambda s,n:v.group(1)})()
+                if v and not ua: ua = type('UA',(object,),{'group':lambda s,n:v.group(1)})()
                 i += 1
             if i < len(lines):
                 url = lines[i].strip()
@@ -158,11 +158,9 @@ def download_logo(url):
 
 # ── Cache ────────────────────────────────────────────────────────────────
 
-_cache = {}
-_loading = set()
+_cache = {}; _loading = set()
 
-def cache_path(cc):
-    return os.path.join(CACHE_DIR, f"country_{cc}.m3u")
+def cache_path(cc): return os.path.join(CACHE_DIR, f"country_{cc}.m3u")
 
 def load_country(cc, cb):
     key = f"country_{cc}"
@@ -170,8 +168,7 @@ def load_country(cc, cb):
     if key in _loading: return
     _loading.add(key)
     def worker():
-        cp = cache_path(cc)
-        text = ""
+        cp = cache_path(cc); text = ""
         if os.path.exists(cp) and time.time()-os.path.getmtime(cp) < CACHE_AGE:
             with open(cp,"r",encoding="utf-8",errors="ignore") as f: text=f.read()
         if not text:
@@ -183,8 +180,7 @@ def load_country(cc, cb):
             elif os.path.exists(cp):
                 with open(cp,"r",encoding="utf-8",errors="ignore") as f: text=f.read()
         chs = parse_m3u(text) if text else []
-        _cache[key] = chs
-        _loading.discard(key)
+        _cache[key] = chs; _loading.discard(key)
         GLib.idle_add(cb, chs)
     threading.Thread(target=worker, daemon=True).start()
 
@@ -199,7 +195,6 @@ def get_categories(channels):
 # ── IPC ──────────────────────────────────────────────────────────────────
 
 _app_ref = None
-
 def ipc_start():
     if os.path.exists(APP_SOCKET):
         try: os.unlink(APP_SOCKET)
@@ -220,476 +215,299 @@ def ipc_start():
         except: pass
     threading.Thread(target=listen, daemon=True).start()
 
-# ── CSS — Omarchy-native design ──────────────────────────────────────────
-
-BG          = C("background",        "#1e1e2e")
-BG_DARK     = C("dark_background",   "#161622")
-BG_DARKER   = C("darker_background", "#101019")
-BG_LIGHT    = C("lighter_background","#313244")
-FG          = C("foreground",        "#cdd6f4")
-FG_DIM      = C("dark_foreground",   "#6c7086")
-FG_LIGHT    = C("light_foreground",  "#bac2de")
-ACCENT      = C("accent",            "#89b4fa")
-GREEN       = C("green",             "#a6e3a1")
-RED         = C("red",               "#f38ba8")
-MUTED       = C("muted",             "#585b70")
-SELECTION   = C("selection",         "#45475a")
+# ── CSS — stripped clean ─────────────────────────────────────────────────
 
 CSS = f"""
-/* ── Base ──────────────────────────────────────────────────────────── */
-window {{ background:{BG_DARKER}; }}
-box {{ background:transparent; }}
-
-/* ── Header ────────────────────────────────────────────────────────── */
+window {{ background:{BG_DD}; }}
 .header {{
-    background:{BG_DARK};
-    padding:16px 32px;
-    border-bottom:1px solid {BG_LIGHT};
+    background:{BG_D};
+    padding:14px 28px;
+    border-bottom:1px solid {BG_L};
 }}
 .header-title {{
-    font-size:18px;
-    font-weight:800;
-    letter-spacing:-0.5px;
+    font-size:16px;
+    font-weight:700;
     color:{FG};
 }}
 .header-title .accent {{ color:{ACCENT}; }}
-.header-breadcrumb {{ font-size:13px; color:{FG_DIM}; }}
-.header-breadcrumb .active {{ color:{FG_LIGHT}; font-weight:600; }}
-.header-count {{
-    font-size:12px;
-    color:{MUTED};
-    font-variant-numeric:tabular-nums;
-}}
-
-/* ── Search ────────────────────────────────────────────────────────── */
+.header-bc {{ font-size:13px; color:{FG_D}; }}
+.header-bc .active {{ color:{FG_L}; font-weight:600; }}
+.header-count {{ font-size:12px; color:{MUTED}; }}
 .search-bar {{
-    background:{BG_DARK};
-    padding:10px 32px;
-    border-bottom:1px solid {BG_LIGHT};
+    background:{BG_D};
+    padding:8px 28px;
+    border-bottom:1px solid {BG_L};
 }}
 .search-entry {{
     background:{BG};
-    border:1px solid {BG_LIGHT};
-    border-radius:10px;
-    padding:10px 16px;
+    border:1px solid {BG_L};
+    border-radius:8px;
+    padding:8px 14px;
     color:{FG};
     font-size:14px;
     caret-color:{ACCENT};
 }}
-.search-entry:focus {{
-    border-color:{ACCENT};
-    outline:none;
-}}
+.search-entry:focus {{ border-color:{ACCENT}; outline:none; }}
 .search-entry placeholder {{ color:{MUTED}; }}
 
-/* ── Grid buttons ──────────────────────────────────────────────────── */
-.grid-btn {{
-    background:{BG};
-    border:2px solid transparent;
-    border-radius:14px;
-    padding:20px 24px;
-    min-height:68px;
-    transition:all 150ms ease;
+/* Country: flat, no border, flag + name */
+.country-btn {{
+    background:transparent;
+    border:none;
+    border-radius:12px;
+    padding:16px 20px;
+    min-height:56px;
 }}
-.grid-btn:hover {{
-    background:{BG_LIGHT};
-    border-color:{SELECTION};
-}}
-.grid-btn:focus {{
-    background:{BG_LIGHT};
-    border-color:{ACCENT};
-    outline:none;
-}}
-.grid-icon {{ font-size:28px; }}
-.grid-name {{
-    font-size:14px;
-    font-weight:600;
-    color:{FG};
-}}
-.grid-sub {{
-    font-size:11px;
-    color:{FG_DIM};
-    margin-top:2px;
-}}
+.country-btn:hover {{ background:{BG_L}; }}
+.country-btn:focus {{ background:{BG_L}; outline:none; }}
+.country-flag {{ font-size:28px; }}
+.country-name {{ font-size:14px; color:{FG}; font-weight:500; }}
 
-/* ── Channel cards ─────────────────────────────────────────────────── */
-.ch-card {{
+/* Category: flat, icon + name */
+.cat-btn {{
+    background:transparent;
+    border:none;
+    border-radius:12px;
+    padding:16px 20px;
+    min-height:56px;
+}}
+.cat-btn:hover {{ background:{BG_L}; }}
+.cat-btn:focus {{ background:{BG_L}; outline:none; }}
+.cat-icon {{ font-size:24px; }}
+.cat-name {{ font-size:14px; color:{FG_L}; font-weight:500; }}
+
+/* Channel: just the logo, no box, no border */
+.ch-btn {{
     background:transparent;
     border:2px solid transparent;
     border-radius:12px;
-    padding:6px;
-    margin:3px;
+    padding:8px;
+    margin:2px;
 }}
-.ch-card:hover {{
-    background:rgba({ACCENT[1:3]},{ACCENT[3:5]},{ACCENT[5:7]},0.06);
-    border-color:{BG_LIGHT};
-}}
-.ch-card:focus {{
+.ch-btn:hover {{ background:rgba({ACCENT[1:3]},{ACCENT[3:5]},{ACCENT[5:7]},0.06); }}
+.ch-btn:focus {{
     background:rgba({ACCENT[1:3]},{ACCENT[3:5]},{ACCENT[5:7]},0.10);
     border-color:{ACCENT};
     outline:none;
 }}
-.ch-card.playing {{
-    background:rgba({GREEN[1:3]},{GREEN[3:5]},{GREEN[5:7]},0.08);
+.ch-btn.playing {{
     border-color:{GREEN};
+    background:rgba({GREEN[1:3]},{GREEN[3:5]},{GREEN[5:7]},0.06);
 }}
 
-/* ── Channel name label (below logo) ──────────────────────────────── */
-.ch-name {{
-    font-size:10px;
-    color:{FG_DIM};
-    margin-top:4px;
-    padding:0 4px;
-}}
-
-/* ── Status bar ────────────────────────────────────────────────────── */
+/* Status */
 .status-bar {{
-    background:{BG_DARK};
-    padding:8px 32px;
-    border-top:1px solid {BG_LIGHT};
+    background:{BG_D};
+    padding:6px 28px;
+    border-top:1px solid {BG_L};
 }}
-.status-text {{
-    font-size:12px;
-    color:{FG_DIM};
-}}
+.status-text {{ font-size:12px; color:{FG_D}; }}
 .status-text.error {{ color:{RED}; }}
 .status-text.playing {{ color:{GREEN}; }}
-.status-hint {{
-    font-size:11px;
-    color:{MUTED};
-}}
+.status-hint {{ font-size:11px; color:{MUTED}; }}
 .status-hint kbd {{
-    background:{BG_LIGHT};
-    color:{FG_DIM};
-    padding:1px 6px;
-    border-radius:4px;
+    background:{BG_L};
+    color:{FG_D};
+    padding:1px 5px;
+    border-radius:3px;
     font-size:10px;
     font-family:inherit;
-    border:1px solid {SELECTION};
 }}
 
-/* ── Loading ───────────────────────────────────────────────────────── */
-.loading-label {{
-    font-size:14px;
-    color:{FG_DIM};
-}}
-.loading-spinner {{
-    color:{ACCENT};
-    font-size:24px;
-}}
-
-/* ── OSD overlay (channel surf) ────────────────────────────────────── */
+/* OSD */
 .osd {{
-    background:rgba(0,0,0,0.75);
-    padding:16px 28px;
-    border-radius:14px;
-    border:1px solid {BG_LIGHT};
+    background:rgba(0,0,0,0.8);
+    padding:14px 24px;
+    border-radius:12px;
+    border:1px solid {BG_L};
 }}
-.osd-title {{
-    font-size:18px;
-    font-weight:700;
-    color:{FG};
-}}
-.osd-sub {{
-    font-size:12px;
-    color:{FG_DIM};
-    margin-top:4px;
-}}
+.osd-title {{ font-size:16px; font-weight:700; color:{FG}; }}
+.osd-sub {{ font-size:12px; color:{FG_D}; margin-top:2px; }}
 
-/* ── Scrollbar ─────────────────────────────────────────────────────── */
-scrollbar slider {{
-    min-width:4px;
-    background:{BG_LIGHT};
-    border-radius:2px;
-}}
+/* Loading */
+.loading-label {{ font-size:14px; color:{FG_D}; }}
+
+/* Scrollbar */
+scrollbar slider {{ min-width:3px; background:{BG_L}; border-radius:2px; }}
 """
 
 # ── App ──────────────────────────────────────────────────────────────────
 
 class OmarchyTV(Adw.Application):
     def __init__(self):
-        super().__init__(application_id=APP_ID,
-                         flags=Gio.ApplicationFlags.FLAGS_NONE)
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
         global _app_ref; _app_ref = self
-        self.all_channels = []
-        self.channels = []
-        self.ch_idx = -1
-        self.state = "home"
-        self.btns = []
-        self.nav = []
-        self.current_cc = ""
-        self._mpv = None; self._mpv_t0 = 0
-        self._watch_id = None; self._mpv_log = None
-        self._osd_id = None
-        self.win = None
+        self.all_channels = []; self.channels = []; self.ch_idx = -1
+        self.state = "home"; self.btns = []; self.nav = []; self.current_cc = ""
+        self._mpv = None; self._mpv_t0 = 0; self._watch_id = None; self._mpv_log = None
+        self._osd_id = None; self.win = None
 
     def do_activate(self):
         try: self._build()
         except Exception as e:
             import traceback; traceback.print_exc()
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  BUILD
-    # ══════════════════════════════════════════════════════════════════════
-
     def _build(self):
         Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
         css = Gtk.CssProvider(); css.load_from_string(CSS)
-        Gtk.StyleContext.add_provider_for_display(
-            Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         self.win = Adw.ApplicationWindow(application=self)
         self.win.set_title(APP_TITLE)
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.win.set_content(root)
 
-        # ── Header ──────────────────────────────────────────────────────
-        self.header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        # Header
+        self.header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.header.add_css_class("header")
-
         self.lbl_title = Gtk.Label()
-        self.lbl_title.set_markup(f'<span class="header-title">Omarchy <span class="accent">TV</span></span>')
-        self.lbl_title.set_xalign(0)
-        self.header.append(self.lbl_title)
-
+        self.lbl_title.set_markup('<span class="header-title">ip<span class="accent">TV</span>rchy</span>')
+        self.lbl_title.set_xalign(0); self.header.append(self.lbl_title)
         self.bc_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.bc_box.set_visible(False)
-        self.header.append(self.bc_box)
-
-        spacer = Gtk.Box(); spacer.set_hexpand(True)
-        self.header.append(spacer)
-
-        self.lbl_count = Gtk.Label()
-        self.lbl_count.add_css_class("header-count")
-        self.lbl_count.set_xalign(1)
-        self.header.append(self.lbl_count)
+        self.bc_box.set_visible(False); self.header.append(self.bc_box)
+        sp = Gtk.Box(); sp.set_hexpand(True); self.header.append(sp)
+        self.lbl_count = Gtk.Label(); self.lbl_count.add_css_class("header-count")
+        self.lbl_count.set_xalign(1); self.header.append(self.lbl_count)
         root.append(self.header)
 
-        # ── Search ──────────────────────────────────────────────────────
-        self.search_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.search_bar.add_css_class("search-bar")
+        # Search
+        self.search_bar = Gtk.Box(); self.search_bar.add_css_class("search-bar")
         self.search_bar.set_visible(False)
-        self.search_entry = Gtk.Entry()
-        self.search_entry.add_css_class("search-entry")
-        self.search_entry.set_placeholder_text("Search channels…")
+        self.search_entry = Gtk.Entry(); self.search_entry.add_css_class("search-entry")
+        self.search_entry.set_placeholder_text("Search…")
         self.search_entry.set_hexpand(True)
         self.search_entry.connect("changed", self._on_search)
         self.search_entry.connect("activate", lambda e: self._play(0) if self.btns else None)
-        self.search_bar.append(self.search_entry)
-        root.append(self.search_bar)
+        self.search_bar.append(self.search_entry); root.append(self.search_bar)
 
-        # ── Content stack ───────────────────────────────────────────────
+        # Content
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
-        self.stack.set_transition_duration(200)
+        self.stack.set_transition_duration(180)
 
-        # Grid
         sw = Gtk.ScrolledWindow(); sw.set_vexpand(True)
         sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         self.flow = Gtk.FlowBox()
         self.flow.set_selection_mode(Gtk.SelectionMode.NONE)
-        self.flow.set_homogeneous(True)
-        self.flow.set_focusable(False)
-        self.flow.set_row_spacing(8)
-        self.flow.set_column_spacing(8)
-        self.flow.set_margin_start(24); self.flow.set_margin_end(24)
-        self.flow.set_margin_top(16); self.flow.set_margin_bottom(16)
+        self.flow.set_homogeneous(True); self.flow.set_focusable(False)
+        self.flow.set_row_spacing(6); self.flow.set_column_spacing(6)
+        self.flow.set_margin_start(20); self.flow.set_margin_end(20)
+        self.flow.set_margin_top(14); self.flow.set_margin_bottom(14)
         sw.set_child(self.flow)
 
-        # Loading
         self.load_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self.load_box.set_valign(Gtk.Align.CENTER)
-        self.load_box.set_halign(Gtk.Align.CENTER)
-        self.load_lbl = Gtk.Label()
-        self.load_lbl.add_css_class("loading-label")
+        self.load_box.set_valign(Gtk.Align.CENTER); self.load_box.set_halign(Gtk.Align.CENTER)
+        self.load_lbl = Gtk.Label(); self.load_lbl.add_css_class("loading-label")
         self.load_box.append(self.load_lbl)
 
-        # OSD overlay
-        self.osd_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        # OSD
+        self.osd_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.osd_box.add_css_class("osd")
-        self.osd_box.set_valign(Gtk.Align.END)
-        self.osd_box.set_halign(Gtk.Align.CENTER)
-        self.osd_box.set_margin_bottom(80)
+        self.osd_box.set_valign(Gtk.Align.END); self.osd_box.set_halign(Gtk.Align.CENTER)
+        self.osd_box.set_margin_bottom(60)
         self.osd_title = Gtk.Label(); self.osd_title.add_css_class("osd-title")
         self.osd_sub = Gtk.Label(); self.osd_sub.add_css_class("osd-sub")
-        self.osd_box.append(self.osd_title)
-        self.osd_box.append(self.osd_sub)
+        self.osd_box.append(self.osd_title); self.osd_box.append(self.osd_sub)
         self.osd_box.set_visible(False)
 
-        # Overlay: grid + OSD
         overlay = Gtk.Overlay()
-        overlay.set_child(sw)
-        overlay.add_overlay(self.osd_box)
-
+        overlay.set_child(sw); overlay.add_overlay(self.osd_box)
         self.stack.add_named(overlay, "grid")
         self.stack.add_named(self.load_box, "load")
         root.append(self.stack)
 
-        # ── Status bar ──────────────────────────────────────────────────
-        status_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
-        status_bar.add_css_class("status-bar")
-
-        self.status_text = Gtk.Label()
-        self.status_text.add_css_class("status-text")
-        self.status_text.set_xalign(0)
-        self.status_text.set_hexpand(True)
-        status_bar.append(self.status_text)
-
-        self.status_hint = Gtk.Label()
-        self.status_hint.add_css_class("status-hint")
+        # Status
+        sb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+        sb.add_css_class("status-bar")
+        self.status_text = Gtk.Label(); self.status_text.add_css_class("status-text")
+        self.status_text.set_xalign(0); self.status_text.set_hexpand(True)
+        sb.append(self.status_text)
+        self.status_hint = Gtk.Label(); self.status_hint.add_css_class("status-hint")
         self.status_hint.set_xalign(1)
-        self.status_hint.set_markup(
-            '<kbd>↑↓←→</kbd> navigate  <kbd>Enter</kbd> select  <kbd>Esc</kbd> back  <kbd>Ctrl+F</kbd> search')
-        status_bar.append(self.status_hint)
-        root.append(status_bar)
+        self.status_hint.set_markup('<kbd>↑↓←→</kbd>  <kbd>Enter</kbd>  <kbd>Esc</kbd>  <kbd>Ctrl+F</kbd>')
+        sb.append(self.status_hint)
+        root.append(sb)
 
-        # ── Keys ────────────────────────────────────────────────────────
+        # Keys
         kc = Gtk.EventControllerKey()
         kc.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         kc.connect("key-pressed", self._on_key)
         self.win.add_controller(kc)
         self.win.connect("close-request", lambda w: (self._mpv_stop(), self.quit(), True)[-1])
 
-        ipc_start()
-        self._home()
-        self.win.present()
-        self.win.fullscreen()
+        ipc_start(); self._home()
+        self.win.present(); self.win.fullscreen()
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  HOME — Country Selection
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Home ─────────────────────────────────────────────────────────────
 
     def _home(self):
         self.nav = []; self.all_channels = []; self.channels = []; self.ch_idx = -1
         self.state = "home"; self.current_cc = ""; self._mpv_stop()
         self._bc_update(); self._clear()
         self.search_bar.set_visible(False)
-        self.flow.set_max_children_per_line(4)
-        self.flow.set_min_children_per_line(3)
+        self.flow.set_max_children_per_line(4); self.flow.set_min_children_per_line(3)
         self.stack.set_visible_child_name("grid")
         self._update_hint("home")
 
         for cc, name, flag in COUNTRIES:
-            btn = Gtk.Button()
-            btn.add_css_class("grid-btn")
-            btn.set_size_request(200, 68)
-
-            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+            btn = Gtk.Button(); btn.add_css_class("country-btn")
+            btn.set_size_request(160, 56)
+            box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
             box.set_valign(Gtk.Align.CENTER)
-
-            fl = Gtk.Label(label=flag)
-            fl.add_css_class("grid-icon")
-            box.append(fl)
-
-            txt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-            txt.set_valign(Gtk.Align.CENTER)
-            nm = Gtk.Label(label=name)
-            nm.add_css_class("grid-name")
-            nm.set_xalign(0)
-            txt.append(nm)
-            cnt = Gtk.Label(label="")
-            cnt.add_css_class("grid-sub")
-            cnt.set_xalign(0)
-            txt.append(cnt)
-            box.append(txt)
-
+            fl = Gtk.Label(label=flag); fl.add_css_class("country-flag"); box.append(fl)
+            nm = Gtk.Label(label=name); nm.add_css_class("country-name"); nm.set_xalign(0)
+            box.append(nm)
             btn.set_child(box)
             btn.connect("clicked", lambda b, c=cc, n=name: self._pick_country(c, n))
             self.flow.append(btn); self.btns.append(btn)
-            self._load_count(cc, cnt)
 
         self.lbl_count.set_label("")
         self.status_text.set_label("Select your country")
-        self.status_text.remove_css_class("error")
-        self.status_text.remove_css_class("playing")
+        self.status_text.remove_css_class("error"); self.status_text.remove_css_class("playing")
         if self.btns: GLib.idle_add(lambda: self.win.set_focus(self.btns[0]))
 
-    def _load_count(self, cc, lbl):
-        cp = cache_path(cc)
-        def worker():
-            count = 0
-            if os.path.exists(cp) and time.time()-os.path.getmtime(cp) < CACHE_AGE:
-                with open(cp,"r",encoding="utf-8",errors="ignore") as f:
-                    count = f.read().count("#EXTINF")
-            else:
-                text = http_get(f"{IPTV_BASE}/countries/{cc}.m3u", timeout=10)
-                if text:
-                    count = text.count("#EXTINF")
-                    try:
-                        with open(cp,"w") as f: f.write(text)
-                    except: pass
-            if count > 0:
-                GLib.idle_add(lbl.set_label, f"{count} channels")
-        threading.Thread(target=worker, daemon=True).start()
-
     def _pick_country(self, cc, name):
-        self.current_cc = cc
-        self.nav = [(cc, name)]
-        self._bc_update()
+        self.current_cc = cc; self.nav = [(cc, name)]; self._bc_update()
         self.state = "loading"
         self.load_lbl.set_label(f"Loading {name}…")
         self.stack.set_visible_child_name("load")
         load_country(cc, lambda chs: self._on_country_loaded(chs, name))
 
     def _on_country_loaded(self, channels, name):
-        self.all_channels = channels
-        self._show_cats(channels, name)
+        self.all_channels = channels; self._show_cats(channels, name)
         return False
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  CATEGORIES
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Categories ───────────────────────────────────────────────────────
 
     def _show_cats(self, channels, country_name):
-        self.state = "cats"
-        self._clear()
-        self.flow.set_max_children_per_line(4)
-        self.flow.set_min_children_per_line(2)
-        self.stack.set_visible_child_name("grid")
-        self._update_hint("cats")
+        self.state = "cats"; self._clear()
+        self.flow.set_max_children_per_line(4); self.flow.set_min_children_per_line(2)
+        self.stack.set_visible_child_name("grid"); self._update_hint("cats")
 
         cats = get_categories(channels)
-
-        # "All" card
-        btn = self._cat_btn("📺", f"All Channels", len(channels))
-        btn.connect("clicked", lambda b: self._show_channels(channels, f"All"))
+        btn = self._cat_btn("📺", "All")
+        btn.connect("clicked", lambda b: self._show_channels(channels, "All"))
         self.flow.append(btn); self.btns.append(btn)
 
         for cat_name, count in cats:
             icon = CAT_ICONS.get(cat_name, "📺")
-            btn = self._cat_btn(icon, cat_name, count)
+            btn = self._cat_btn(icon, cat_name)
             btn.connect("clicked", lambda b, cn=cat_name: self._filter_cat(cn))
             self.flow.append(btn); self.btns.append(btn)
 
-        self.lbl_count.set_label(f"{len(channels)} total")
-        self.status_text.set_label(f"{len(cats)} categories available")
+        self.lbl_count.set_label("")
+        self.status_text.set_label(f"{len(channels)} channels")
         self.status_text.remove_css_class("error")
         if self.btns: GLib.idle_add(lambda: self.win.set_focus(self.btns[0]))
 
-    def _cat_btn(self, icon, name, count):
-        btn = Gtk.Button()
-        btn.add_css_class("grid-btn")
-        btn.set_size_request(220, 68)
-
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
+    def _cat_btn(self, icon, name):
+        btn = Gtk.Button(); btn.add_css_class("cat-btn")
+        btn.set_size_request(180, 56)
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         box.set_valign(Gtk.Align.CENTER)
-
-        ico = Gtk.Label(label=icon)
-        ico.add_css_class("grid-icon")
-        box.append(ico)
-
-        txt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-        txt.set_valign(Gtk.Align.CENTER)
-        nm = Gtk.Label(label=name)
-        nm.add_css_class("grid-name")
-        nm.set_xalign(0)
-        txt.append(nm)
-        cnt = Gtk.Label(label=f"{count} channels")
-        cnt.add_css_class("grid-sub")
-        cnt.set_xalign(0)
-        txt.append(cnt)
-        box.append(txt)
-
+        ico = Gtk.Label(label=icon); ico.add_css_class("cat-icon"); box.append(ico)
+        nm = Gtk.Label(label=name); nm.add_css_class("cat-name"); nm.set_xalign(0)
+        box.append(nm)
         btn.set_child(box)
         return btn
 
@@ -698,50 +516,26 @@ class OmarchyTV(Adw.Application):
                     if cat_name in [g.strip() for g in c["group"].split(";")]]
         country_name = self.nav[0][1] if self.nav else ""
         self.nav = [(self.current_cc, country_name), (cat_name, cat_name)]
-        self._bc_update()
-        self._show_channels(filtered, cat_name)
+        self._bc_update(); self._show_channels(filtered, cat_name)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  CHANNELS
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Channels — logos only, no text ───────────────────────────────────
 
     def _show_channels(self, channels, label=""):
         self.channels = channels; self.ch_idx = -1; self.state = "channels"
         self._clear()
-        self.flow.set_max_children_per_line(7)
-        self.flow.set_min_children_per_line(4)
+        self.flow.set_max_children_per_line(8); self.flow.set_min_children_per_line(4)
         self._update_hint("channels")
 
         for i, ch in enumerate(channels):
-            btn = Gtk.Button()
-            btn.add_css_class("ch-card")
-            btn.set_size_request(156, 156)
-            btn.set_focusable(True)
-            btn._idx = i
-
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            box.set_valign(Gtk.Align.CENTER)
-            box.set_halign(Gtk.Align.CENTER)
-
-            img = Gtk.Image()
-            img.set_pixel_size(128)
-            img.set_size_request(128, 128)
+            btn = Gtk.Button(); btn.add_css_class("ch-btn")
+            btn.set_size_request(128, 128); btn.set_focusable(True); btn._idx = i
+            img = Gtk.Image(); img.set_pixel_size(112); img.set_size_request(112, 112)
             lp = ch.get("logo_file")
             if lp and os.path.exists(lp):
                 try: img.set_from_paintable(Gdk.Texture.new_from_filename(lp))
                 except: img.set_from_icon_name("video-x-generic-symbolic")
-            else:
-                img.set_from_icon_name("video-x-generic-symbolic")
-            box.append(img)
-
-            name_lbl = Gtk.Label(label=ch["name"][:24])
-            name_lbl.add_css_class("ch-name")
-            name_lbl.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
-            name_lbl.set_max_width_chars(18)
-            name_lbl.set_xalign(0.5)
-            box.append(name_lbl)
-
-            btn.set_child(box)
+            else: img.set_from_icon_name("video-x-generic-symbolic")
+            btn.set_child(img)
             btn.connect("clicked", lambda b, i=i: self._play(i))
             self.flow.append(btn); self.btns.append(btn)
 
@@ -758,130 +552,90 @@ class OmarchyTV(Adw.Application):
                 url = ch.get("logo_url")
                 if not url or ch.get("logo_file"): continue
                 lp = download_logo(url)
-                if lp:
-                    ch["logo_file"] = lp
-                    GLib.idle_add(self._set_logo, i, lp)
+                if lp: ch["logo_file"] = lp; GLib.idle_add(self._set_logo, i, lp)
         threading.Thread(target=worker, daemon=True).start()
 
     def _set_logo(self, idx, path):
         if idx < len(self.btns):
-            btn = self.btns[idx]
-            box = btn.get_child()
-            if box:
-                img = box.get_first_child()
-                if img and os.path.exists(path):
-                    try: img.set_from_paintable(Gdk.Texture.new_from_filename(path))
-                    except: pass
+            img = self.btns[idx].get_child()
+            if img and os.path.exists(path):
+                try: img.set_from_paintable(Gdk.Texture.new_from_filename(path))
+                except: pass
         return False
 
     def _clear(self):
         self.btns = []
-        while self.flow.get_first_child():
-            self.flow.remove(self.flow.get_first_child())
+        while self.flow.get_first_child(): self.flow.remove(self.flow.get_first_child())
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  BREADCRUMB & HINTS
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Breadcrumb & Hints ───────────────────────────────────────────────
 
     def _bc_update(self):
-        while self.bc_box.get_first_child():
-            self.bc_box.remove(self.bc_box.get_first_child())
+        while self.bc_box.get_first_child(): self.bc_box.remove(self.bc_box.get_first_child())
         self.bc_box.set_visible(bool(self.nav))
         for i,(_, nm) in enumerate(self.nav):
             if i > 0:
-                sep = Gtk.Label(label="›")
-                sep.add_css_class("header-breadcrumb")
-                self.bc_box.append(sep)
-            lbl = Gtk.Label(label=nm)
-            lbl.add_css_class("header-breadcrumb")
-            if i == len(self.nav) - 1:
-                lbl.add_css_class("active")
+                sep = Gtk.Label(label="›"); sep.add_css_class("header-bc"); self.bc_box.append(sep)
+            lbl = Gtk.Label(label=nm); lbl.add_css_class("header-bc")
+            if i == len(self.nav)-1: lbl.add_css_class("active")
             self.bc_box.append(lbl)
 
     def _update_hint(self, state):
         hints = {
-            "home":     '<kbd>↑↓←→</kbd> navigate  <kbd>Enter</kbd> select  <kbd>Ctrl+F</kbd> search',
-            "cats":     '<kbd>↑↓←→</kbd> navigate  <kbd>Enter</kbd> select  <kbd>Esc</kbd> back',
-            "channels": '<kbd>↑↓←→</kbd> navigate  <kbd>Enter</kbd> play  <kbd>+/-</kbd> surf  <kbd>Esc</kbd> back  <kbd>Ctrl+F</kbd> search',
+            "home":     '<kbd>↑↓←→</kbd>  <kbd>Enter</kbd>  <kbd>Ctrl+F</kbd>',
+            "cats":     '<kbd>↑↓←→</kbd>  <kbd>Enter</kbd>  <kbd>Esc</kbd>',
+            "channels": '<kbd>↑↓←→</kbd>  <kbd>Enter</kbd>  <kbd>+/-</kbd> surf  <kbd>Esc</kbd>  <kbd>Ctrl+F</kbd>',
         }
         self.status_hint.set_markup(hints.get(state, ""))
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  SEARCH
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Search ───────────────────────────────────────────────────────────
 
     def _toggle_search(self):
         vis = not self.search_bar.get_visible()
         self.search_bar.set_visible(vis)
-        if vis:
-            self.search_entry.grab_focus()
-        else:
-            self.search_entry.set_text("")
-            if self.state == "search": self._back()
+        if vis: self.search_entry.grab_focus()
+        else: self.search_entry.set_text(""); (self._back() if self.state == "search" else None)
 
     def _on_search(self, entry):
         q = entry.get_text().strip()
         if len(q) < 2: return
         src = self.all_channels if self.all_channels else self.channels
-        results = [c for c in src
-                   if q in c["name"].lower() or q in c.get("group","").lower()]
-        self.state = "search"
-        self.channels = results; self.ch_idx = -1
+        results = [c for c in src if q in c["name"].lower() or q in c.get("group","").lower()]
+        self.state = "search"; self.channels = results; self.ch_idx = -1
         self._clear()
-        self.flow.set_max_children_per_line(7)
-        self.flow.set_min_children_per_line(4)
+        self.flow.set_max_children_per_line(8); self.flow.set_min_children_per_line(4)
         self._update_hint("channels")
         for i, ch in enumerate(results):
-            btn = Gtk.Button()
-            btn.add_css_class("ch-card")
-            btn.set_size_request(156, 156)
-            btn.set_focusable(True); btn._idx = i
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            box.set_valign(Gtk.Align.CENTER); box.set_halign(Gtk.Align.CENTER)
-            img = Gtk.Image(); img.set_pixel_size(128); img.set_size_request(128, 128)
+            btn = Gtk.Button(); btn.add_css_class("ch-btn")
+            btn.set_size_request(128, 128); btn.set_focusable(True); btn._idx = i
+            img = Gtk.Image(); img.set_pixel_size(112); img.set_size_request(112, 112)
             img.set_from_icon_name("video-x-generic-symbolic")
-            box.append(img)
-            name_lbl = Gtk.Label(label=ch["name"][:24])
-            name_lbl.add_css_class("ch-name")
-            name_lbl.set_ellipsize(3)
-            name_lbl.set_max_width_chars(18)
-            name_lbl.set_xalign(0.5)
-            box.append(name_lbl)
-            btn.set_child(box)
+            btn.set_child(img)
             btn.connect("clicked", lambda b, i=i: self._play(i))
             self.flow.append(btn); self.btns.append(btn)
         self.lbl_count.set_label(f"{len(results)}")
         self.stack.set_visible_child_name("grid")
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  PLAYBACK
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Playback ─────────────────────────────────────────────────────────
 
     def _play(self, idx):
         if idx < 0 or idx >= len(self.channels): return
         ch = self.channels[idx]
-        if 0 <= self.ch_idx < len(self.btns):
-            self.btns[self.ch_idx].remove_css_class("playing")
+        if 0 <= self.ch_idx < len(self.btns): self.btns[self.ch_idx].remove_css_class("playing")
         self.ch_idx = idx; self.state = "playing"
         if idx < len(self.btns): self.btns[idx].add_css_class("playing")
         self.status_text.set_label(f"▶  {ch['name']}")
-        self.status_text.add_css_class("playing")
-        self.status_text.remove_css_class("error")
+        self.status_text.add_css_class("playing"); self.status_text.remove_css_class("error")
         self._show_osd(ch["name"], f"{idx+1} / {len(self.channels)}")
-        self._mpv_play(ch["url"], ch.get("user_agent",""))
-        self._mpv_watch()
+        self._mpv_play(ch["url"], ch.get("user_agent","")); self._mpv_watch()
 
     def _show_osd(self, title, sub=""):
-        self.osd_title.set_label(title)
-        self.osd_sub.set_label(sub)
+        self.osd_title.set_label(title); self.osd_sub.set_label(sub)
         self.osd_box.set_visible(True)
         if self._osd_id: GLib.source_remove(self._osd_id)
         self._osd_id = GLib.timeout_add(2500, self._hide_osd)
 
     def _hide_osd(self):
-        self.osd_box.set_visible(False)
-        self._osd_id = None
-        return False
+        self.osd_box.set_visible(False); self._osd_id = None; return False
 
     def _mpv_play(self, url, ua=""):
         if self._mpv_alive():
@@ -919,24 +673,20 @@ class OmarchyTV(Adw.Application):
     def _mpv_check(self):
         if not self._mpv_alive():
             if time.time()-self._mpv_t0 < 3:
-                err = self._read_mpv_error()
-                if self.state == "playing":
-                    self._err(f"Stream failed: {err}" if err else "Stream failed to load")
+                err = ""
+                try:
+                    if self._mpv_log: self._mpv_log.flush()
+                    if os.path.exists(MPV_LOG):
+                        with open(MPV_LOG) as f:
+                            for ln in reversed(f.readlines()[-10:]):
+                                l = ln.strip().lower()
+                                if any(k in l for k in ["error","failed","403","forbidden"]):
+                                    err = ln.strip()[:100]; break
+                except: pass
+                if self.state == "playing": self._err(f"Stream failed: {err}" if err else "Stream failed")
             if self.state == "playing": self._back_to_grid()
             return False
         return True
-
-    def _read_mpv_error(self):
-        try:
-            if self._mpv_log: self._mpv_log.flush()
-            if os.path.exists(MPV_LOG):
-                with open(MPV_LOG) as f:
-                    for ln in reversed(f.readlines()[-10:]):
-                        l = ln.strip().lower()
-                        if any(k in l for k in ["error","failed","403","forbidden"]):
-                            return ln.strip()[:100]
-        except: pass
-        return ""
 
     def _mpv_stop(self):
         if self._mpv_alive():
@@ -957,8 +707,7 @@ class OmarchyTV(Adw.Application):
 
     def _err(self, msg):
         self.status_text.set_label(f"✗ {msg}")
-        self.status_text.add_css_class("error")
-        self.status_text.remove_css_class("playing")
+        self.status_text.add_css_class("error"); self.status_text.remove_css_class("playing")
 
     def _surf(self, delta):
         if not self.channels: return
@@ -967,76 +716,54 @@ class OmarchyTV(Adw.Application):
         self._show_osd(ch["name"], f"{nxt+1} / {len(self.channels)}")
         self._play(nxt)
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  KEYBOARD
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Keyboard ─────────────────────────────────────────────────────────
 
     def _on_key(self, ctrl, keyval, keycode, state):
-        k = Gdk.keyval_name(keyval)
-        s = self.state
+        k = Gdk.keyval_name(keyval); s = self.state
         mod = state & Gdk.ModifierType.CONTROL_MASK
 
-        # Ctrl+F — search (any state)
         if k == "f" and mod:
-            if s in ("home","cats","channels","search"):
-                self._toggle_search()
+            if s in ("home","cats","channels","search"): self._toggle_search()
             return True
-
-        # Escape
         if k == "Escape":
             if self.search_bar.get_visible():
-                self.search_bar.set_visible(False)
-                self.search_entry.set_text("")
+                self.search_bar.set_visible(False); self.search_entry.set_text("")
                 if s == "search": self._back()
                 return True
             self._back(); return True
-
-        # Channel surf (only in channel grid, not while playing — mpv handles that)
         if k in ("plus","equal","KP_Add") and s == "channels":
             self._surf(1); return True
         if k in ("minus","underscore","KP_Subtract") and s == "channels":
             self._surf(-1); return True
-
-        # F — fullscreen toggle
         if k == "f" and not mod:
             if self.win.is_fullscreen(): self.win.unfullscreen()
             else: self.win.fullscreen()
             return True
-
-        # Space — pause mpv
         if k == "space" and self._mpv_alive():
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.settimeout(0.3); sock.connect(MPV_SOCKET)
-                sock.send(json.dumps({"command":["cycle","pause"]}).encode()+b"\n")
-                sock.close()
+                sock.send(json.dumps({"command":["cycle","pause"]}).encode()+b"\n"); sock.close()
             except: pass
             return True
-
-        # F5 — refresh
         if k == "F5":
             for f in os.listdir(CACHE_DIR):
                 if f.startswith("country_") and f.endswith(".m3u"):
                     try: os.remove(os.path.join(CACHE_DIR,f))
                     except: pass
             _cache.clear(); self._home(); return True
-
-        # Enter
         if k in ("Return","KP_Enter"):
             foc = self.win.get_focus()
             if foc:
                 if hasattr(foc, "_idx"): self._play(foc._idx)
                 else: foc.emit("clicked")
             return True
-
-        # Arrow navigation
         if s in ("home","cats","channels","search"):
-            cols = 4 if s in ("home","cats") else 7
+            cols = 4 if s in ("home","cats") else 8
             if k == "Down":   self._nav(self.btns, cols);  return True
             if k == "Up":     self._nav(self.btns, -cols); return True
             if k == "Right":  self._nav(self.btns, 1);     return True
             if k == "Left":   self._nav(self.btns, -1);    return True
-
         return False
 
     def handle_ipc(self, action):
@@ -1045,54 +772,37 @@ class OmarchyTV(Adw.Application):
         elif action == "quit": self._back()
         return False
 
-    # ══════════════════════════════════════════════════════════════════════
-    #  NAVIGATION
-    # ══════════════════════════════════════════════════════════════════════
+    # ── Navigation ───────────────────────────────────────────────────────
 
     def _back(self):
         if self._watch_id: GLib.source_remove(self._watch_id); self._watch_id = None
         if self._osd_id: GLib.source_remove(self._osd_id); self._osd_id = None
         self.osd_box.set_visible(False)
-
         if self.state == "playing":
-            self._mpv_stop()
-            self.state = "channels"
-            self.status_text.set_label("")
-            self.status_text.remove_css_class("playing")
-            self.status_text.remove_css_class("error")
-            self._update_hint("channels")
-            if 0 <= self.ch_idx < len(self.btns):
-                self.btns[self.ch_idx].grab_focus()
+            self._mpv_stop(); self.state = "channels"
+            self.status_text.set_label(""); self.status_text.remove_css_class("playing")
+            self.status_text.remove_css_class("error"); self._update_hint("channels")
+            if 0 <= self.ch_idx < len(self.btns): self.btns[self.ch_idx].grab_focus()
             return
-
-        if self.state in ("channels", "search"):
+        if self.state in ("channels","search"):
             self._mpv_stop()
             if self.all_channels:
-                country_name = self.nav[0][1] if self.nav else ""
-                self.nav = [self.nav[0]] if self.nav else []
-                self._bc_update()
-                self._show_cats(self.all_channels, country_name)
-            else:
-                self._home()
+                self.nav = [self.nav[0]] if self.nav else []; self._bc_update()
+                self._show_cats(self.all_channels, self.nav[0][1] if self.nav else "")
+            else: self._home()
             return
-
-        if self.state == "cats":
-            self._home(); return
-
+        if self.state == "cats": self._home(); return
         self._mpv_stop(); self._home()
 
     def _back_to_grid(self):
         if self._watch_id: GLib.source_remove(self._watch_id); self._watch_id = None
-        self.state = "channels"
-        self.status_text.remove_css_class("playing")
+        self.state = "channels"; self.status_text.remove_css_class("playing")
         self._update_hint("channels")
-        if 0 <= self.ch_idx < len(self.btns):
-            self.btns[self.ch_idx].grab_focus()
+        if 0 <= self.ch_idx < len(self.btns): self.btns[self.ch_idx].grab_focus()
 
     def _nav(self, widgets, delta):
         if not widgets: return
-        foc = self.win.get_focus()
-        cur = -1; c = foc
+        foc = self.win.get_focus(); cur = -1; c = foc
         while c:
             if c in widgets: cur = widgets.index(c); break
             c = c.get_parent()
@@ -1105,8 +815,6 @@ class OmarchyTV(Adw.Application):
             try: os.unlink(APP_SOCKET)
             except: pass
         Adw.Application.do_shutdown(self)
-
-# ── Entry ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     sys.excepthook = lambda t,v,tb: __import__('traceback').print_exception(t,v,tb)
