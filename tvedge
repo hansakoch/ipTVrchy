@@ -1,5 +1,0 @@
-#!/bin/bash
-# Tvedge launcher — kill old instance, launch native via uwsm
-pkill -f "python3.*tvedge-app" 2>/dev/null
-sleep 0.2
-exec uwsm-app -- python3 /home/hak/.local/bin/tvedge-app

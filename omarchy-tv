@@ -1,0 +1,5 @@
+#!/bin/bash
+# Omarchy TV launcher — kill old instance, launch native via uwsm
+pkill -f "python3.*omarchy-tv-app" 2>/dev/null
+sleep 0.2
+exec uwsm-app -- python3 /home/hak/.local/bin/omarchy-tv-app

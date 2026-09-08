@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tvedge — IPTV player for Omarchy.
+Omarchy TV — IPTV player for Omarchy.
 Country → Category → Play → Surf with +/-.
 """
 import gi
@@ -13,11 +13,11 @@ from collections import Counter
 
 # ── Config ───────────────────────────────────────────────────────────────
 
-DATA_DIR = os.path.expanduser("~/.local/share/tvedge")
-CACHE_DIR = os.path.expanduser("~/.cache/tvedge")
+DATA_DIR = os.path.expanduser("~/.local/share/omarchy-tv")
+CACHE_DIR = os.path.expanduser("~/.cache/omarchy-tv")
 LOGO_CACHE = os.path.join(CACHE_DIR, "logos")
-APP_SOCKET = "/tmp/tvedge-app.sock"
-MPV_LOG = "/tmp/tvedge-mpv.log"
+APP_SOCKET = "/tmp/omarchy-tv-app.sock"
+MPV_LOG = "/tmp/omarchy-tv-mpv.log"
 CACHE_AGE = 6 * 3600
 MPV_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 IPTV_BASE = "https://iptv-org.github.io/iptv"
@@ -104,7 +104,7 @@ def parse_m3u(text):
 def http_get(url, timeout=15):
     try:
         r = subprocess.run(["curl","-4","-sL","--max-time",str(timeout),
-                           "-H","User-Agent: Tvedge/2.0", url],
+                           "-H","User-Agent: Omarchy TV/2.0", url],
                           capture_output=True, timeout=timeout+2)
         return r.stdout.decode("utf-8", errors="ignore")
     except: return ""
@@ -115,7 +115,7 @@ def download_logo(url):
     if p and os.path.exists(p): return p
     try:
         subprocess.run(["curl","-4","-sL","--max-time","5",
-                       "-H","User-Agent: Tvedge/2.0","-o",p,url],
+                       "-H","User-Agent: Omarchy TV/2.0","-o",p,url],
                       capture_output=True, timeout=8)
         return p if os.path.exists(p) and os.path.getsize(p) > 0 else None
     except: return None
@@ -219,9 +219,9 @@ scrollbar slider { min-width:4px; background:#1a1a1a; border-radius:2px; }
 
 # ── App ──────────────────────────────────────────────────────────────────
 
-class Tvedge(Adw.Application):
+class Omarchy TV(Adw.Application):
     def __init__(self):
-        super().__init__(application_id="org.omarchy.tvedge",
+        super().__init__(application_id="org.omarchy.omarchy-tv",
                          flags=Gio.ApplicationFlags.FLAGS_NONE)
         global _app_ref; _app_ref = self
         self.all_channels = []    # all channels for current country
@@ -246,14 +246,14 @@ class Tvedge(Adw.Application):
             Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         self.win = Adw.ApplicationWindow(application=self)
-        self.win.set_title("Tvedge")
+        self.win.set_title("Omarchy TV")
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.win.set_content(root)
 
         # Header
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         hdr.add_css_class("hdr")
-        t = Gtk.Label(label="Tvedge"); t.add_css_class("hdr-title"); hdr.append(t)
+        t = Gtk.Label(label="Omarchy TV"); t.add_css_class("hdr-title"); hdr.append(t)
         self.bc_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self.bc_box.set_visible(False); hdr.append(self.bc_box)
         sp = Gtk.Box(); sp.set_hexpand(True); hdr.append(sp)
@@ -312,7 +312,7 @@ class Tvedge(Adw.Application):
         ipc_start()
         self._home()
         self.win.present(); self.win.fullscreen()
-        try: print("Tvedge ready", flush=True)
+        try: print("Omarchy TV ready", flush=True)
         except: pass
 
     # ── Home: country selection ──────────────────────────────────────────
@@ -536,13 +536,13 @@ class Tvedge(Adw.Application):
         if self._mpv_alive():
             try:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                s.settimeout(0.3); s.connect("/tmp/tvedge-mpv.sock")
+                s.settimeout(0.3); s.connect("/tmp/omarchy-tv-mpv.sock")
                 s.send(json.dumps({"command":["loadfile",url,"replace"]}).encode()+b"\n")
                 s.close(); self._mpv_t0 = time.time(); return
             except: pass
         self._mpv_stop()
-        if os.path.exists("/tmp/tvedge-mpv.sock"):
-            try: os.unlink("/tmp/tvedge-mpv.sock")
+        if os.path.exists("/tmp/omarchy-tv-mpv.sock"):
+            try: os.unlink("/tmp/omarchy-tv-mpv.sock")
             except: pass
         cmd = ["mpv","--no-terminal",
             "--hwdec=auto","--cache=yes","--cache-secs=30",
@@ -550,7 +550,7 @@ class Tvedge(Adw.Application):
             "--vo=gpu","--network-timeout=10",
             "--no-input-default-bindings","--fullscreen",
             f"--user-agent={ua or MPV_UA}",
-            "--input-ipc-server=/tmp/tvedge-mpv.sock",
+            "--input-ipc-server=/tmp/omarchy-tv-mpv.sock",
             f"--input-conf={os.path.join(DATA_DIR,'mpv-input.conf')}", url]
         try:
             self._mpv_log = open(MPV_LOG,"w")
@@ -592,7 +592,7 @@ class Tvedge(Adw.Application):
                 try: self._mpv.kill()
                 except: pass
         self._mpv = None
-        for f in ["/tmp/tvedge-mpv.sock"]:
+        for f in ["/tmp/omarchy-tv-mpv.sock"]:
             if os.path.exists(f):
                 try: os.unlink(f)
                 except: pass
@@ -635,7 +635,7 @@ class Tvedge(Adw.Application):
         if k == "space" and self._mpv_alive():
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                sock.settimeout(0.3); sock.connect("/tmp/tvedge-mpv.sock")
+                sock.settimeout(0.3); sock.connect("/tmp/omarchy-tv-mpv.sock")
                 sock.send(json.dumps({"command":["cycle","pause"]}).encode()+b"\n")
                 sock.close()
             except: pass
@@ -712,6 +712,6 @@ class Tvedge(Adw.Application):
 
 if __name__ == "__main__":
     sys.excepthook = lambda t,v,tb: __import__('traceback').print_exception(t,v,tb)
-    try: print("Tvedge starting…",flush=True)
+    try: print("Omarchy TV starting…",flush=True)
     except: pass
-    Tvedge().run(sys.argv)
+    Omarchy TV().run(sys.argv)
