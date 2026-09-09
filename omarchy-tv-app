@@ -20,6 +20,7 @@ APP_ID      = "org.omarchy.tv"
 DATA_DIR    = os.path.expanduser("~/.local/share/omarchy-tv")
 CACHE_DIR   = os.path.expanduser("~/.cache/omarchy-tv")
 LOGO_DIR    = os.path.join(CACHE_DIR, "logos")
+FAVORITES  = os.path.join(DATA_DIR, "favorites.json")
 APP_SOCKET  = f"/tmp/{APP_NAME}-app.sock"
 MPV_SOCKET  = f"/tmp/{APP_NAME}-mpv.sock"
 MPV_LOG     = f"/tmp/{APP_NAME}-mpv.log"
@@ -206,6 +207,42 @@ def load_country(cc, cb):
         GLib.idle_add(cb, chs)
     threading.Thread(target=worker, daemon=True).start()
 
+def load_favorites():
+    """Load favorites as [{kind, id, name}] refs."""
+    if os.path.exists(FAVORITES):
+        try:
+            with open(FAVORITES) as f: return json.load(f)
+        except: pass
+    return []
+
+def save_favorites(favs):
+    try:
+        with open(FAVORITES, "w") as f: json.dump(favs, f)
+    except: pass
+
+def toggle_favorite(favs, ch):
+    """Toggle a channel in favorites. Returns updated list."""
+    key = ch.get("url", "")
+    found = False
+    out = [f for f in favs if f.get("url","") != key]
+    if len(out) < len(favs): found = True
+    if not found:
+        out.append({"url": key, "name": ch.get("name","?"), "group": ch.get("group","")})
+    return out
+
+def is_favorite(favs, ch):
+    key = ch.get("url", "")
+    return any(f.get("url","") == key for f in favs)
+
+def resolve_favorites(favs, all_channels):
+    """Resolve favorite refs to actual channel objects."""
+    by_url = {c["url"]: c for c in all_channels}
+    out = []
+    for f in favs:
+        hit = by_url.get(f.get("url",""))
+        if hit: out.append(hit)
+    return out
+
 def get_categories(channels):
     counts = Counter()
     for ch in channels:
@@ -287,6 +324,7 @@ class OmarchyTV(Adw.Application):
         global _app_ref; _app_ref = self
         self.all_channels = []; self.channels = []; self.ch_idx = -1
         self.state = "home"; self.btns = []; self.nav = []; self.current_cc = ""
+        self.favorites = load_favorites()
         self._mpv = None; self._mpv_t0 = 0; self._watch_id = None; self._mpv_log = None
         self._osd_id = None; self.win = None
 
@@ -452,6 +490,14 @@ class OmarchyTV(Adw.Application):
         self.stack.set_visible_child_name("grid"); self._update_hint("cats")
 
         cats = get_categories(channels)
+
+        # Favorites first (if any)
+        fav_chs = resolve_favorites(self.favorites, channels)
+        if fav_chs:
+            fav_btn = self._cat_btn(I["flag"], f"★ Favorites")
+            fav_btn.connect("clicked", lambda b: self._show_channels(fav_chs, "★ Favorites"))
+            self.flow.append(fav_btn); self.btns.append(fav_btn)
+
         btn = self._cat_btn(I["tv"], "All")
         btn.connect("clicked", lambda b: self._show_channels(channels, "All"))
         self.flow.append(btn); self.btns.append(btn)
@@ -601,10 +647,10 @@ class OmarchyTV(Adw.Application):
         self.status_text.set_label(f"{I['play']}  {ch['name']}")
         self.status_text.add_css_class("playing"); self.status_text.remove_css_class("error")
         self._show_osd(ch["name"], f"{idx+1} / {len(self.channels)}")
-        self._mpv_play(ch["url"], ch.get("user_agent",""))
+        self._mpv_play(ch["url"], ch.get("user_agent",""), ch["name"])
         self._mpv_watch()
         # Update hint for playing state
-        self.status_hint.set_markup(f'<kbd>+/-</kbd> surf  <kbd>Esc</kbd> back  <kbd>Space</kbd> pause')
+        self.status_hint.set_markup(f'<kbd>+/-</kbd> surf  <kbd>Esc</kbd> back  <kbd>Space</kbd> pause  <kbd>Ctrl+D</kbd> fav')
 
     def _show_osd(self, title, sub=""):
         self.osd_title.set_label(title); self.osd_sub.set_label(sub)
@@ -615,7 +661,7 @@ class OmarchyTV(Adw.Application):
     def _hide_osd(self):
         self.osd_box.set_visible(False); self._osd_id = None; return False
 
-    def _mpv_play(self, url, ua=""):
+    def _mpv_play(self, url, ua="", ch_name="IPTV"):
         if self._mpv_alive():
             try:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -634,7 +680,10 @@ class OmarchyTV(Adw.Application):
             "--no-input-default-bindings","--fullscreen",
             f"--user-agent={ua or MPV_UA}",
             f"--input-ipc-server={MPV_SOCKET}",
-            f"--input-conf={MPV_INPUT}", url]
+            f"--input-conf={MPV_INPUT}",
+            f"--title=ipTVrchy: {ch_name}",
+            f"--force-media-title={ch_name}",
+            url]
         try:
             self._mpv_log = open(MPV_LOG,"w")
             self._mpv = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=self._mpv_log)
@@ -708,6 +757,15 @@ class OmarchyTV(Adw.Application):
         # Ctrl+F — search (any state except playing)
         if k == "f" and mod and s != "playing":
             self._toggle_search(); return True
+
+        # Ctrl+D — toggle favorite
+        if k == "d" and mod and s == "playing" and 0 <= self.ch_idx < len(self.channels):
+            ch = self.channels[self.ch_idx]
+            self.favorites = toggle_favorite(self.favorites, ch)
+            save_favorites(self.favorites)
+            is_fav = is_favorite(self.favorites, ch)
+            self._show_osd(f"{'★' if is_fav else '☆'} {ch['name']}", "Favorite" if is_fav else "Removed")
+            return True
 
         # Escape
         if k == "Escape":
