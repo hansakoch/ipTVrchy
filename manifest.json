@@ -1,0 +1,23 @@
+{
+    "schemaVersion": 1,
+    "id": "io.github.hansakoch.iptvrchy",
+    "name": "ipTVrchy",
+    "version": "1.0.0",
+    "author": "Hans Al Koch",
+    "license": "MIT",
+    "description": "Native IPTV player for Omarchy. Country → Category → Channels → Play. Theme-aware, keyboard-first, JetBrainsMono Nerd Font. Channels from iptv-org.",
+    "kinds": [
+        "overlay",
+        "service"
+    ],
+    "keepLoaded": false,
+    "entryPoints": {
+        "overlay": "IptvrchyOverlay.qml",
+        "service": "IptvrchyService.qml"
+    },
+    "overlay": {
+        "displayName": "ipTVrchy",
+        "description": "Browse and play worldwide IPTV channels",
+        "category": "Media"
+    }
+}
