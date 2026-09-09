@@ -23,13 +23,12 @@ APP_SOCKET  = f"/tmp/{APP_NAME}-app.sock"
 MPV_SOCKET  = f"/tmp/{APP_NAME}-mpv.sock"
 MPV_LOG     = f"/tmp/{APP_NAME}-mpv.log"
 MPV_INPUT   = os.path.join(DATA_DIR, "mpv-input.conf")
-# IPTV sources — fastest first, fallbacks if one goes down
+# IPTV sources — GitLab primary (open source), GitHub fallback
 IPTV_SOURCES = [
-    "https://raw.githubusercontent.com/iptv-org/iptv/master",  # GitHub CDN, ~0.07s
-    "https://gitlab.com/iptv-org/iptv/-/raw/master",             # GitLab mirror, ~0.5s
-    "https://iptv-org.github.io/iptv",                           # GitHub Pages, ~1s
+    "https://gitlab.com/iptv-org/iptv/-/raw/master",             # GitLab — primary
+    "https://raw.githubusercontent.com/iptv-org/iptv/master",  # GitHub CDN — fallback
+    "https://iptv-org.github.io/iptv",                           # GitHub Pages — last resort
 ]
-IPTV_BASE   = IPTV_SOURCES[0]
 CACHE_AGE   = 6 * 3600
 MPV_UA      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 for d in [DATA_DIR, CACHE_DIR, LOGO_DIR]: os.makedirs(d, exist_ok=True)
