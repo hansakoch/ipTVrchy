@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 ipTVrchy — Native IPTV for Omarchy.
-JetBrainsMono Nerd Font. Matte Black. No emojis. Pure Omarchy.
+JetBrainsMono Nerd Font. Theme-aware. No emojis. Pure Omarchy.
+Country → Category → Channels → Play. Surf with +/-.
 """
 import gi
 gi.require_version("Gtk", "4.0")
@@ -23,56 +24,33 @@ APP_SOCKET  = f"/tmp/{APP_NAME}-app.sock"
 MPV_SOCKET  = f"/tmp/{APP_NAME}-mpv.sock"
 MPV_LOG     = f"/tmp/{APP_NAME}-mpv.log"
 MPV_INPUT   = os.path.join(DATA_DIR, "mpv-input.conf")
-# IPTV sources — GitLab primary (open source), GitHub fallback
 IPTV_SOURCES = [
-    "https://gitlab.com/iptv-org/iptv/-/raw/master",             # GitLab — primary
-    "https://raw.githubusercontent.com/iptv-org/iptv/master",  # GitHub CDN — fallback
-    "https://iptv-org.github.io/iptv",                           # GitHub Pages — last resort
+    "https://gitlab.com/iptv-org/iptv/-/raw/master",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master",
+    "https://iptv-org.github.io/iptv",
 ]
 CACHE_AGE   = 6 * 3600
 MPV_UA      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 for d in [DATA_DIR, CACHE_DIR, LOGO_DIR]: os.makedirs(d, exist_ok=True)
 
-# ── Nerd Font Icons (JetBrainsMono Nerd Font / Material Design Icons) ───
+# ── Nerd Font Icons ─────────────────────────────────────────────────────
 
-ICONS = {
-    "tv":          "\U000f0336",  # 󰌶
-    "globe":       "\U000f02ab",  # 󰊫
-    "flag":        "\U000f02a9",  # 󰊩
-    "search":      "\U000f0349",  # 󰍉
-    "play":        "\U000f040a",  # 󰐊
-    "pause":       "\U000f03e4",  # 󰏤
-    "next":        "\U000f045d",  # 󰑝
-    "prev":        "\U000f045e",  # 󰑞
-    "back":        "\U000f004d",  # 󰁍
-    "entertainment":"\U000f0293", # 󰊓
-    "movies":      "\U000f0296",  # 󰊖
-    "news":        "\U000f0298",  # 󰊘
-    "sports":      "\U000f0299",  # 󰊙
-    "kids":        "\U000f029a",  # 󰊚
-    "music":       "\U000f075a",  # 󰝚
-    "comedy":      "\U000f029b",  # 󰊛
-    "family":      "\U000f029c",  # 󰊜
-    "education":   "\U000f029d",  # 󰊝
-    "science":     "\U000f029e",  # 󰊞
-    "lifestyle":   "\U000f029f",  # 󰊟
-    "culture":     "\U000f02a0",  # 󰊠
-    "cooking":     "\U000f02a1",  # 󰊡
-    "business":    "\U000f02a2",  # 󰊢
-    "legislative": "\U000f02a3",  # 󰊣
-    "religious":   "\U000f02a4",  # 󰊤
-    "outdoor":     "\U000f02a5",  # 󰊥
-    "travel":      "\U000f02a6",  # 󰊦
-    "auto":        "\U000f02a7",  # 󰊧
-    "weather":     "\U000f02a8",  # 󰊨
-    "shop":        "\U000f02aa",  # 󰊪
-    "documentary": "\U000f0296",  # 󰊖
-    "series":      "\U000f0336",  # 󰌶
-    "classic":     "\U000f0296",  # 󰊖
-    "animation":   "\U000f0296",  # 󰊖
+I = {
+    "tv": "\U000f0336", "globe": "\U000f02ab", "flag": "\U000f02a9",
+    "search": "\U000f0349", "play": "\U000f040a", "pause": "\U000f03e4",
+    "next": "\U000f045d", "prev": "\U000f045e", "back": "\U000f004d",
+    "entertainment": "\U000f0293", "movies": "\U000f0296", "news": "\U000f0298",
+    "sports": "\U000f0299", "kids": "\U000f029a", "music": "\U000f075a",
+    "comedy": "\U000f029b", "family": "\U000f029c", "education": "\U000f029d",
+    "science": "\U000f029e", "lifestyle": "\U000f029f", "culture": "\U000f02a0",
+    "cooking": "\U000f02a1", "business": "\U000f02a2", "legislative": "\U000f02a3",
+    "religious": "\U000f02a4", "outdoor": "\U000f02a5", "travel": "\U000f02a6",
+    "auto": "\U000f02a7", "weather": "\U000f02a8", "shop": "\U000f02aa",
+    "documentary": "\U000f0296", "series": "\U000f0336", "classic": "\U000f0296",
+    "animation": "\U000f0296", "error": "\U000f0028", "loading": "\U000f0456",
 }
 
-CAT_ICON_MAP = {
+CAT_MAP = {
     "General":"tv","Entertainment":"entertainment","Movies":"movies",
     "Series":"series","News":"news","Sports":"sports","Kids":"kids",
     "Music":"music","Documentary":"documentary","Comedy":"comedy",
@@ -98,7 +76,7 @@ COUNTRIES = [
     ("ke","Kenya","🇰🇪"),("eg","Egypt","🇪🇬"),
 ]
 
-# ── Theme — Matte Black ─────────────────────────────────────────────────
+# ── Theme ────────────────────────────────────────────────────────────────
 
 def _read_theme():
     try:
@@ -117,19 +95,13 @@ def _read_theme():
 _T = _read_theme()
 def C(n, fb): return _T.get(n, fb)
 
-BG      = C("background","#121212")
-BG_D    = C("dark_background","#0d0d0d")
-BG_DD   = C("darker_background","#090909")
-BG_L    = C("lighter_background","#1e1e1e")
-FG      = C("foreground","#bebebe")
-FG_D    = C("dark_foreground","#555555")
-FG_L    = C("light_foreground","#8a8a8d")
-ACCENT  = C("accent","#e68e0d")
-GREEN   = C("green","#FFC107")
-RED     = C("red","#D35F5F")
-MUTED   = C("muted","#333333")
-SEL     = C("selection","#2a2a2a")
-FONT    = "JetBrainsMono Nerd Font"
+BG=C("background","#121212"); BG_D=C("dark_background","#0d0d0d")
+BG_DD=C("darker_background","#090909"); BG_L=C("lighter_background","#1e1e1e")
+FG=C("foreground","#bebebe"); FG_D=C("dark_foreground","#555555")
+FG_L=C("light_foreground","#8a8a8d"); ACCENT=C("accent","#e68e0d")
+GREEN=C("green","#FFC107"); RED=C("red","#D35F5F")
+MUTED=C("muted","#333333"); SEL=C("selection","#2a2a2a")
+FONT="JetBrainsMono Nerd Font"
 
 # ── M3U Parser ───────────────────────────────────────────────────────────
 
@@ -200,8 +172,8 @@ def download_logo(url):
                       capture_output=True, timeout=8)
         if os.path.exists(p) and os.path.getsize(p) > 100: return p
         if os.path.exists(p): os.unlink(p)
-        return None
-    except: return None
+    except: pass
+    return None
 
 # ── Cache ────────────────────────────────────────────────────────────────
 
@@ -246,9 +218,10 @@ def get_categories(channels):
 
 _app_ref = None
 def ipc_start():
-    if os.path.exists(APP_SOCKET):
-        try: os.unlink(APP_SOCKET)
-        except: pass
+    for f in [APP_SOCKET]:
+        if os.path.exists(f):
+            try: os.unlink(f)
+            except: pass
     def listen():
         try:
             srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -265,177 +238,45 @@ def ipc_start():
         except: pass
     threading.Thread(target=listen, daemon=True).start()
 
-# ── CSS — Matte Black, JetBrainsMono, Nerd Font ─────────────────────────
+# ── CSS ──────────────────────────────────────────────────────────────────
 
 CSS = f"""
-window {{
-    background:{BG_DD};
-    font-family: "{FONT}", monospace;
-}}
-
-.header {{
-    background:{BG_D};
-    padding:20px 36px;
-    border-bottom:1px solid {BG_L};
-}}
-.header-title {{
-    font-family: "{FONT}", monospace;
-    font-size:20px;
-    font-weight:700;
-    color:{FG};
-    letter-spacing:-0.5px;
-}}
+window {{ background:{BG_DD}; font-family:"{FONT}",monospace; }}
+.header {{ background:{BG_D}; padding:20px 36px; border-bottom:1px solid {BG_L}; }}
+.header-title {{ font-family:"{FONT}",monospace; font-size:20px; font-weight:700; color:{FG}; letter-spacing:-0.5px; }}
 .header-title .accent {{ color:{ACCENT}; }}
-.header-bc {{
-    font-family: "{FONT}", monospace;
-    font-size:14px;
-    color:{FG_D};
-}}
+.header-bc {{ font-family:"{FONT}",monospace; font-size:14px; color:{FG_D}; }}
 .header-bc .active {{ color:{FG_L}; font-weight:600; }}
-.header-count {{
-    font-family: "{FONT}", monospace;
-    font-size:13px;
-    color:{MUTED};
-}}
-
-.search-bar {{
-    background:{BG_D};
-    padding:12px 36px;
-    border-bottom:1px solid {BG_L};
-}}
-.search-entry {{
-    font-family: "{FONT}", monospace;
-    background:{BG};
-    border:1px solid {BG_L};
-    border-radius:8px;
-    padding:12px 18px;
-    color:{FG};
-    font-size:16px;
-    caret-color:{ACCENT};
-}}
+.header-count {{ font-family:"{FONT}",monospace; font-size:13px; color:{MUTED}; }}
+.search-bar {{ background:{BG_D}; padding:12px 36px; border-bottom:1px solid {BG_L}; }}
+.search-entry {{ font-family:"{FONT}",monospace; background:{BG}; border:1px solid {BG_L}; border-radius:8px; padding:12px 18px; color:{FG}; font-size:16px; caret-color:{ACCENT}; }}
 .search-entry:focus {{ border-color:{ACCENT}; outline:none; }}
 .search-entry placeholder {{ color:{MUTED}; }}
-
-/* Country buttons — clean, large */
-.country-btn {{
-    background:transparent;
-    border:none;
-    border-radius:10px;
-    padding:20px 28px;
-    min-height:64px;
-}}
+.country-btn {{ background:transparent; border:none; border-radius:10px; padding:20px 28px; min-height:64px; }}
 .country-btn:hover {{ background:{BG_L}; }}
 .country-btn:focus {{ background:{SEL}; outline:none; }}
 .country-flag {{ font-size:32px; }}
-.country-name {{
-    font-family: "{FONT}", monospace;
-    font-size:16px;
-    color:{FG};
-    font-weight:500;
-}}
-
-/* Category buttons — nerd font icons */
-.cat-btn {{
-    background:transparent;
-    border:none;
-    border-radius:10px;
-    padding:20px 28px;
-    min-height:64px;
-}}
+.country-name {{ font-family:"{FONT}",monospace; font-size:16px; color:{FG}; font-weight:500; }}
+.cat-btn {{ background:transparent; border:none; border-radius:10px; padding:20px 28px; min-height:64px; }}
 .cat-btn:hover {{ background:{BG_L}; }}
 .cat-btn:focus {{ background:{SEL}; outline:none; }}
-.cat-icon {{
-    font-family: "{FONT}", monospace;
-    font-size:22px;
-    color:{ACCENT};
-}}
-.cat-name {{
-    font-family: "{FONT}", monospace;
-    font-size:16px;
-    color:{FG_L};
-    font-weight:500;
-}}
-
-/* Channel cards — just logos, no box */
-.ch-btn {{
-    background:transparent;
-    border:2px solid transparent;
-    border-radius:10px;
-    padding:8px;
-    margin:2px;
-}}
+.cat-icon {{ font-family:"{FONT}",monospace; font-size:22px; color:{ACCENT}; }}
+.cat-name {{ font-family:"{FONT}",monospace; font-size:16px; color:{FG_L}; font-weight:500; }}
+.ch-btn {{ background:transparent; border:2px solid transparent; border-radius:10px; padding:8px; margin:2px; }}
 .ch-btn:hover {{ background:rgba({ACCENT[1:3]},{ACCENT[3:5]},{ACCENT[5:7]},0.05); }}
-.ch-btn:focus {{
-    background:rgba({ACCENT[1:3]},{ACCENT[3:5]},{ACCENT[5:7]},0.08);
-    border-color:{ACCENT};
-    outline:none;
-}}
-.ch-btn.playing {{
-    border-color:{GREEN};
-    background:rgba({GREEN[1:3]},{GREEN[3:5]},{GREEN[5:7]},0.05);
-}}
-
-/* Status bar */
-.status-bar {{
-    background:{BG_D};
-    padding:10px 36px;
-    border-top:1px solid {BG_L};
-}}
-.status-text {{
-    font-family: "{FONT}", monospace;
-    font-size:13px;
-    color:{FG_D};
-}}
+.ch-btn:focus {{ background:rgba({ACCENT[1:3]},{ACCENT[3:5]},{ACCENT[5:7]},0.08); border-color:{ACCENT}; outline:none; }}
+.ch-btn.playing {{ border-color:{GREEN}; background:rgba({GREEN[1:3]},{GREEN[3:5]},{GREEN[5:7]},0.05); }}
+.status-bar {{ background:{BG_D}; padding:10px 36px; border-top:1px solid {BG_L}; }}
+.status-text {{ font-family:"{FONT}",monospace; font-size:13px; color:{FG_D}; }}
 .status-text.error {{ color:{RED}; }}
 .status-text.playing {{ color:{GREEN}; }}
-.status-hint {{
-    font-family: "{FONT}", monospace;
-    font-size:12px;
-    color:{MUTED};
-}}
-.status-hint kbd {{
-    font-family: "{FONT}", monospace;
-    background:{BG_L};
-    color:{FG_D};
-    padding:2px 8px;
-    border-radius:4px;
-    font-size:11px;
-    border:1px solid {SEL};
-}}
-
-/* OSD overlay */
-.osd {{
-    background:rgba(0,0,0,0.85);
-    padding:20px 32px;
-    border-radius:12px;
-    border:1px solid {BG_L};
-}}
-.osd-title {{
-    font-family: "{FONT}", monospace;
-    font-size:20px;
-    font-weight:700;
-    color:{FG};
-}}
-.osd-sub {{
-    font-family: "{FONT}", monospace;
-    font-size:13px;
-    color:{FG_D};
-    margin-top:4px;
-}}
-
-/* Loading */
-.loading-label {{
-    font-family: "{FONT}", monospace;
-    font-size:16px;
-    color:{FG_D};
-}}
-
-/* Scrollbar */
-scrollbar slider {{
-    min-width:4px;
-    background:{BG_L};
-    border-radius:2px;
-}}
+.status-hint {{ font-family:"{FONT}",monospace; font-size:12px; color:{MUTED}; }}
+.status-hint kbd {{ font-family:"{FONT}",monospace; background:{BG_L}; color:{FG_D}; padding:2px 8px; border-radius:4px; font-size:11px; border:1px solid {SEL}; }}
+.osd {{ background:rgba(0,0,0,0.85); padding:20px 32px; border-radius:12px; border:1px solid {BG_L}; }}
+.osd-title {{ font-family:"{FONT}",monospace; font-size:20px; font-weight:700; color:{FG}; }}
+.osd-sub {{ font-family:"{FONT}",monospace; font-size:13px; color:{FG_D}; margin-top:4px; }}
+.loading-label {{ font-family:"{FONT}",monospace; font-size:16px; color:{FG_D}; }}
+scrollbar slider {{ min-width:4px; background:{BG_L}; border-radius:2px; }}
 """
 
 # ── App ──────────────────────────────────────────────────────────────────
@@ -465,26 +306,26 @@ class OmarchyTV(Adw.Application):
         self.win.set_content(root)
 
         # Header
-        self.header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        self.header.add_css_class("header")
+        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        hdr.add_css_class("header")
         self.lbl_title = Gtk.Label()
         self.lbl_title.set_markup(f'<span class="header-title">ip<span class="accent">TV</span>rchy</span>')
-        self.lbl_title.set_xalign(0); self.header.append(self.lbl_title)
+        self.lbl_title.set_xalign(0); hdr.append(self.lbl_title)
         self.bc_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        self.bc_box.set_visible(False); self.header.append(self.bc_box)
-        sp = Gtk.Box(); sp.set_hexpand(True); self.header.append(sp)
+        self.bc_box.set_visible(False); hdr.append(self.bc_box)
+        sp = Gtk.Box(); sp.set_hexpand(True); hdr.append(sp)
         self.lbl_count = Gtk.Label(); self.lbl_count.add_css_class("header-count")
-        self.lbl_count.set_xalign(1); self.header.append(self.lbl_count)
-        root.append(self.header)
+        self.lbl_count.set_xalign(1); hdr.append(self.lbl_count)
+        root.append(hdr)
 
         # Search
         self.search_bar = Gtk.Box(); self.search_bar.add_css_class("search-bar")
         self.search_bar.set_visible(False)
         self.search_entry = Gtk.Entry(); self.search_entry.add_css_class("search-entry")
-        self.search_entry.set_placeholder_text(f"{ICONS['search']}  Search channels…")
+        self.search_entry.set_placeholder_text(f"{I['search']}  Search channels…")
         self.search_entry.set_hexpand(True)
         self.search_entry.connect("changed", self._on_search)
-        self.search_entry.connect("activate", lambda e: self._play(0) if self.btns else None)
+        self.search_entry.connect("activate", lambda e: self._play(0) if self.channels else None)
         self.search_bar.append(self.search_entry); root.append(self.search_bar)
 
         # Content
@@ -507,11 +348,11 @@ class OmarchyTV(Adw.Application):
         self.load_lbl = Gtk.Label(); self.load_lbl.add_css_class("loading-label")
         self.load_box.append(self.load_lbl)
 
-        # OSD
+        # OSD — centered overlay
         self.osd_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.osd_box.add_css_class("osd")
         self.osd_box.set_valign(Gtk.Align.END); self.osd_box.set_halign(Gtk.Align.CENTER)
-        self.osd_box.set_margin_bottom(80)
+        self.osd_box.set_margin_bottom(60)
         self.osd_title = Gtk.Label(); self.osd_title.add_css_class("osd-title")
         self.osd_sub = Gtk.Label(); self.osd_sub.add_css_class("osd-sub")
         self.osd_box.append(self.osd_title); self.osd_box.append(self.osd_sub)
@@ -531,11 +372,6 @@ class OmarchyTV(Adw.Application):
         sb.append(self.status_text)
         self.status_hint = Gtk.Label(); self.status_hint.add_css_class("status-hint")
         self.status_hint.set_xalign(1)
-        self.status_hint.set_markup(
-            f'<kbd>{ICONS["prev"]}{ICONS["next"]}</kbd> navigate  '
-            f'<kbd>Enter</kbd> select  '
-            f'<kbd>Esc</kbd> back  '
-            f'<kbd>Ctrl+F</kbd> search')
         sb.append(self.status_hint)
         root.append(sb)
 
@@ -544,10 +380,25 @@ class OmarchyTV(Adw.Application):
         kc.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         kc.connect("key-pressed", self._on_key)
         self.win.add_controller(kc)
-        self.win.connect("close-request", lambda w: (self._mpv_stop(), self.quit(), True)[-1])
+        self.win.connect("close-request", lambda w: (self._cleanup(), self.quit(), True)[-1])
 
-        ipc_start(); self._home()
+        # Cleanup stale mpv
+        self._cleanup_mpv()
+        ipc_start()
+        self._home()
         self.win.present(); self.win.fullscreen()
+
+    def _cleanup_mpv(self):
+        """Kill any orphaned mpv processes from previous runs."""
+        try:
+            r = subprocess.run(["pgrep", "-f", "mpv.*omarchy-tv"], capture_output=True, text=True)
+            for pid in r.stdout.strip().split("\n"):
+                if pid: subprocess.run(["kill", pid], capture_output=True)
+        except: pass
+        for f in [MPV_SOCKET, MPV_LOG]:
+            if os.path.exists(f):
+                try: os.unlink(f)
+                except: pass
 
     # ── Home ─────────────────────────────────────────────────────────────
 
@@ -573,18 +424,23 @@ class OmarchyTV(Adw.Application):
             self.flow.append(btn); self.btns.append(btn)
 
         self.lbl_count.set_label("")
-        self.status_text.set_label(f"{ICONS['globe']}  Select your country")
+        self.status_text.set_label(f"{I['globe']}  Select your country")
         self.status_text.remove_css_class("error"); self.status_text.remove_css_class("playing")
         if self.btns: GLib.idle_add(lambda: self.win.set_focus(self.btns[0]))
 
     def _pick_country(self, cc, name):
         self.current_cc = cc; self.nav = [(cc, name)]; self._bc_update()
         self.state = "loading"
-        self.load_lbl.set_label(f"{ICONS['tv']}  Loading {name}…")
+        self.load_lbl.set_label(f"{I['tv']}  Loading {name}…")
         self.stack.set_visible_child_name("load")
         load_country(cc, lambda chs: self._on_country_loaded(chs, name))
 
     def _on_country_loaded(self, channels, name):
+        if not channels:
+            self.status_text.set_label(f"{I['error']}  No channels found for {name}")
+            self.status_text.add_css_class("error")
+            self._home()
+            return False
         self.all_channels = channels; self._show_cats(channels, name)
         return False
 
@@ -596,19 +452,18 @@ class OmarchyTV(Adw.Application):
         self.stack.set_visible_child_name("grid"); self._update_hint("cats")
 
         cats = get_categories(channels)
-        btn = self._cat_btn(ICONS["tv"], "All")
+        btn = self._cat_btn(I["tv"], "All")
         btn.connect("clicked", lambda b: self._show_channels(channels, "All"))
         self.flow.append(btn); self.btns.append(btn)
 
         for cat_name, count in cats:
-            icon_key = CAT_ICON_MAP.get(cat_name, "tv")
-            icon = ICONS.get(icon_key, ICONS["tv"])
+            icon = I.get(CAT_MAP.get(cat_name, "tv"), I["tv"])
             btn = self._cat_btn(icon, cat_name)
             btn.connect("clicked", lambda b, cn=cat_name: self._filter_cat(cn))
             self.flow.append(btn); self.btns.append(btn)
 
         self.lbl_count.set_label("")
-        self.status_text.set_label(f"{len(channels)} channels available")
+        self.status_text.set_label(f"{len(channels)} channels")
         self.status_text.remove_css_class("error")
         if self.btns: GLib.idle_add(lambda: self.win.set_focus(self.btns[0]))
 
@@ -693,9 +548,9 @@ class OmarchyTV(Adw.Application):
 
     def _update_hint(self, state):
         hints = {
-            "home":     f'<kbd>{ICONS["prev"]}{ICONS["next"]}</kbd>  <kbd>Enter</kbd>  <kbd>Ctrl+F</kbd>',
-            "cats":     f'<kbd>{ICONS["prev"]}{ICONS["next"]}</kbd>  <kbd>Enter</kbd>  <kbd>Esc</kbd>',
-            "channels": f'<kbd>{ICONS["prev"]}{ICONS["next"]}</kbd>  <kbd>Enter</kbd>  <kbd>+/-</kbd> surf  <kbd>Esc</kbd>  <kbd>Ctrl+F</kbd>',
+            "home":     f'<kbd>{I["prev"]}{I["next"]}</kbd>  <kbd>Enter</kbd>  <kbd>Ctrl+F</kbd>',
+            "cats":     f'<kbd>{I["prev"]}{I["next"]}</kbd>  <kbd>Enter</kbd>  <kbd>Esc</kbd>',
+            "channels": f'<kbd>{I["prev"]}{I["next"]}</kbd>  <kbd>Enter</kbd>  <kbd>+/-</kbd> surf  <kbd>Esc</kbd>  <kbd>Ctrl+F</kbd>',
         }
         self.status_hint.set_markup(hints.get(state, ""))
 
@@ -705,7 +560,9 @@ class OmarchyTV(Adw.Application):
         vis = not self.search_bar.get_visible()
         self.search_bar.set_visible(vis)
         if vis: self.search_entry.grab_focus()
-        else: self.search_entry.set_text(""); (self._back() if self.state == "search" else None)
+        else:
+            self.search_entry.set_text("")
+            if self.state == "search": self._back()
 
     def _on_search(self, entry):
         q = entry.get_text().strip()
@@ -720,12 +577,18 @@ class OmarchyTV(Adw.Application):
             btn = Gtk.Button(); btn.add_css_class("ch-btn")
             btn.set_size_request(140, 140); btn.set_focusable(True); btn._idx = i
             img = Gtk.Image(); img.set_pixel_size(120); img.set_size_request(120, 120)
-            img.set_from_icon_name("video-x-generic-symbolic")
+            # Use cached logo if available
+            lp = ch.get("logo_file")
+            if lp and os.path.exists(lp):
+                try: img.set_from_paintable(Gdk.Texture.new_from_filename(lp))
+                except: img.set_from_icon_name("video-x-generic-symbolic")
+            else: img.set_from_icon_name("video-x-generic-symbolic")
             btn.set_child(img)
             btn.connect("clicked", lambda b, i=i: self._play(i))
             self.flow.append(btn); self.btns.append(btn)
         self.lbl_count.set_label(f"{len(results)}")
         self.stack.set_visible_child_name("grid")
+        if self.btns: GLib.idle_add(lambda: self.win.set_focus(self.btns[0]))
 
     # ── Playback ─────────────────────────────────────────────────────────
 
@@ -735,16 +598,19 @@ class OmarchyTV(Adw.Application):
         if 0 <= self.ch_idx < len(self.btns): self.btns[self.ch_idx].remove_css_class("playing")
         self.ch_idx = idx; self.state = "playing"
         if idx < len(self.btns): self.btns[idx].add_css_class("playing")
-        self.status_text.set_label(f"{ICONS['play']}  {ch['name']}")
+        self.status_text.set_label(f"{I['play']}  {ch['name']}")
         self.status_text.add_css_class("playing"); self.status_text.remove_css_class("error")
         self._show_osd(ch["name"], f"{idx+1} / {len(self.channels)}")
-        self._mpv_play(ch["url"], ch.get("user_agent","")); self._mpv_watch()
+        self._mpv_play(ch["url"], ch.get("user_agent",""))
+        self._mpv_watch()
+        # Update hint for playing state
+        self.status_hint.set_markup(f'<kbd>+/-</kbd> surf  <kbd>Esc</kbd> back  <kbd>Space</kbd> pause')
 
     def _show_osd(self, title, sub=""):
         self.osd_title.set_label(title); self.osd_sub.set_label(sub)
         self.osd_box.set_visible(True)
         if self._osd_id: GLib.source_remove(self._osd_id)
-        self._osd_id = GLib.timeout_add(2500, self._hide_osd)
+        self._osd_id = GLib.timeout_add(3000, self._hide_osd)
 
     def _hide_osd(self):
         self.osd_box.set_visible(False); self._osd_id = None; return False
@@ -784,21 +650,26 @@ class OmarchyTV(Adw.Application):
 
     def _mpv_check(self):
         if not self._mpv_alive():
-            if time.time()-self._mpv_t0 < 3:
-                err = ""
-                try:
-                    if self._mpv_log: self._mpv_log.flush()
-                    if os.path.exists(MPV_LOG):
-                        with open(MPV_LOG) as f:
-                            for ln in reversed(f.readlines()[-10:]):
-                                l = ln.strip().lower()
-                                if any(k in l for k in ["error","failed","403","forbidden"]):
-                                    err = ln.strip()[:100]; break
-                except: pass
-                if self.state == "playing": self._err(f"Stream failed: {err}" if err else "Stream failed")
+            elapsed = time.time() - self._mpv_t0
+            if elapsed < 3:
+                err = self._read_mpv_error()
+                if self.state == "playing":
+                    self._err(f"{I['error']}  {err}" if err else f"{I['error']}  Stream failed")
             if self.state == "playing": self._back_to_grid()
             return False
         return True
+
+    def _read_mpv_error(self):
+        try:
+            if self._mpv_log: self._mpv_log.flush()
+            if os.path.exists(MPV_LOG):
+                with open(MPV_LOG) as f:
+                    for ln in reversed(f.readlines()[-10:]):
+                        l = ln.strip().lower()
+                        if any(k in l for k in ["error","failed","403","forbidden","refused"]):
+                            return ln.strip()[:100]
+        except: pass
+        return ""
 
     def _mpv_stop(self):
         if self._mpv_alive():
@@ -818,7 +689,7 @@ class OmarchyTV(Adw.Application):
             self._mpv_log = None
 
     def _err(self, msg):
-        self.status_text.set_label(f"✗ {msg}")
+        self.status_text.set_label(msg)
         self.status_text.add_css_class("error"); self.status_text.remove_css_class("playing")
 
     def _surf(self, delta):
@@ -834,23 +705,31 @@ class OmarchyTV(Adw.Application):
         k = Gdk.keyval_name(keyval); s = self.state
         mod = state & Gdk.ModifierType.CONTROL_MASK
 
-        if k == "f" and mod:
-            if s in ("home","cats","channels","search"): self._toggle_search()
-            return True
+        # Ctrl+F — search (any state except playing)
+        if k == "f" and mod and s != "playing":
+            self._toggle_search(); return True
+
+        # Escape
         if k == "Escape":
             if self.search_bar.get_visible():
                 self.search_bar.set_visible(False); self.search_entry.set_text("")
                 if s == "search": self._back()
                 return True
             self._back(); return True
-        if k in ("plus","equal","KP_Add") and s == "channels":
+
+        # Channel surf from grid
+        if k in ("plus","equal","KP_Add") and s in ("channels","search"):
             self._surf(1); return True
-        if k in ("minus","underscore","KP_Subtract") and s == "channels":
+        if k in ("minus","underscore","KP_Subtract") and s in ("channels","search"):
             self._surf(-1); return True
+
+        # Fullscreen toggle
         if k == "f" and not mod:
             if self.win.is_fullscreen(): self.win.unfullscreen()
             else: self.win.fullscreen()
             return True
+
+        # Space — pause mpv
         if k == "space" and self._mpv_alive():
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -858,24 +737,31 @@ class OmarchyTV(Adw.Application):
                 sock.send(json.dumps({"command":["cycle","pause"]}).encode()+b"\n"); sock.close()
             except: pass
             return True
+
+        # F5 — refresh cache
         if k == "F5":
             for f in os.listdir(CACHE_DIR):
                 if f.startswith("country_") and f.endswith(".m3u"):
                     try: os.remove(os.path.join(CACHE_DIR,f))
                     except: pass
             _cache.clear(); self._home(); return True
+
+        # Enter
         if k in ("Return","KP_Enter"):
             foc = self.win.get_focus()
             if foc:
                 if hasattr(foc, "_idx"): self._play(foc._idx)
                 else: foc.emit("clicked")
             return True
+
+        # Arrow navigation
         if s in ("home","cats","channels","search"):
             cols = 4 if s in ("home","cats") else 8
             if k == "Down":   self._nav(self.btns, cols);  return True
             if k == "Up":     self._nav(self.btns, -cols); return True
             if k == "Right":  self._nav(self.btns, 1);     return True
             if k == "Left":   self._nav(self.btns, -1);    return True
+
         return False
 
     def handle_ipc(self, action):
@@ -890,12 +776,14 @@ class OmarchyTV(Adw.Application):
         if self._watch_id: GLib.source_remove(self._watch_id); self._watch_id = None
         if self._osd_id: GLib.source_remove(self._osd_id); self._osd_id = None
         self.osd_box.set_visible(False)
+
         if self.state == "playing":
             self._mpv_stop(); self.state = "channels"
             self.status_text.set_label(""); self.status_text.remove_css_class("playing")
             self.status_text.remove_css_class("error"); self._update_hint("channels")
             if 0 <= self.ch_idx < len(self.btns): self.btns[self.ch_idx].grab_focus()
             return
+
         if self.state in ("channels","search"):
             self._mpv_stop()
             if self.all_channels:
@@ -903,6 +791,7 @@ class OmarchyTV(Adw.Application):
                 self._show_cats(self.all_channels, self.nav[0][1] if self.nav else "")
             else: self._home()
             return
+
         if self.state == "cats": self._home(); return
         self._mpv_stop(); self._home()
 
@@ -921,11 +810,15 @@ class OmarchyTV(Adw.Application):
         nxt = max(0, min(len(widgets)-1, (cur+delta) if cur>=0 else 0))
         widgets[nxt].grab_focus()
 
-    def do_shutdown(self):
+    def _cleanup(self):
         self._mpv_stop()
-        if os.path.exists(APP_SOCKET):
-            try: os.unlink(APP_SOCKET)
-            except: pass
+        for f in [APP_SOCKET]:
+            if os.path.exists(f):
+                try: os.unlink(f)
+                except: pass
+
+    def do_shutdown(self):
+        self._cleanup()
         Adw.Application.do_shutdown(self)
 
 if __name__ == "__main__":
